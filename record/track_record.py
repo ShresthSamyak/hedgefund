@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from sqlalchemy import (
+    JSON,
     DateTime,
     Index,
     create_engine,
@@ -70,7 +71,7 @@ class Trade(Base):
     fees: Mapped[float] = mapped_column(default=0.0)
     portfolio_value_at_entry: Mapped[float]
     reason_text: Mapped[str]
-    signal_payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    signal_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     paper: Mapped[int] = mapped_column(default=1)
 
     __table_args__ = (Index("ix_trades_agent_entry_ts", "agent", "entry_ts"),)

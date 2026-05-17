@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"import sqlalchemy, pydantic_settings; print\\('sqlalchemy', sqlalchemy.__version__\\); print\\('pydantic_settings', pydantic_settings.__version__\\)\")"
+      "Bash(python -c \"import sqlalchemy, pydantic_settings; print\\('sqlalchemy', sqlalchemy.__version__\\); print\\('pydantic_settings', pydantic_settings.__version__\\)\")",
+      "Bash(python -m pytest tests/test_track_record.py -v)"
     ]
   }
 }
