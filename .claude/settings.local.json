@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sqlalchemy, pydantic_settings; print\\('sqlalchemy', sqlalchemy.__version__\\); print\\('pydantic_settings', pydantic_settings.__version__\\)\")"
+    ]
+  }
+}
