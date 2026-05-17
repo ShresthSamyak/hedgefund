@@ -1,0 +1,326 @@
+"""Append-only trade log — the fundraising artifact.
+
+Every trade across every agent passes through here. The append-only guarantee
+is enforced at the application layer:
+  * Closed rows (exit_ts NOT NULL) are immutable. Any attempt to mutate them
+    raises TrackRecordImmutableError.
+  * Open rows allow exactly one transition: NULL exit fields -> filled exit fields.
+  * No DELETE is ever exposed.
+
+We start on SQLite (single file, zero infra) and migrate to PostgreSQL at
+week 11 by swapping ALPHAGRID_DB_URL. The schema is portable.
+"""
+from __future__ import annotations
+
+import json
+import math
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Iterable
+
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    create_engine,
+    event,
+    inspect as sa_inspect,
+    select,
+)
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from config.settings import get_settings
+
+
+class TrackRecordError(Exception):
+    """Base error for the trade log."""
+
+
+class TrackRecordImmutableError(TrackRecordError):
+    """Raised when caller tries to mutate a closed trade."""
+
+
+class TradeNotFoundError(TrackRecordError):
+    """Raised when caller references a trade id that does not exist."""
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Trade(Base):
+    __tablename__ = "trades"
+
+    id = Column(String(36), primary_key=True)
+    entry_ts = Column(DateTime(timezone=True), nullable=False, index=True)
+    exit_ts = Column(DateTime(timezone=True), nullable=True, index=True)
+    agent = Column(String(64), nullable=False, index=True)
+    market = Column(String(16), nullable=False)
+    ticker = Column(String(32), nullable=False, index=True)
+    side = Column(String(8), nullable=False)
+    qty = Column(Float, nullable=False)
+    entry_price = Column(Float, nullable=False)
+    exit_price = Column(Float, nullable=True)
+    pnl = Column(Float, nullable=True)
+    fees = Column(Float, nullable=False, default=0.0)
+    portfolio_value_at_entry = Column(Float, nullable=False)
+    reason_text = Column(String, nullable=False)
+    signal_payload = Column(JSON, nullable=False, default=dict)
+    paper = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (Index("ix_trades_agent_entry_ts", "agent", "entry_ts"),)
+
+
+@dataclass(frozen=True)
+class OpenTradeRequest:
+    agent: str
+    market: str
+    ticker: str
+    side: str
+    qty: float
+    entry_price: float
+    portfolio_value_at_entry: float
+    reason_text: str
+    signal_payload: dict[str, Any]
+    paper: bool = True
+    entry_ts: datetime | None = None
+
+
+@dataclass(frozen=True)
+class CloseTradeRequest:
+    trade_id: str
+    exit_price: float
+    fees: float = 0.0
+    exit_ts: datetime | None = None
+
+
+class TrackRecord:
+    """Append-only trade log facade. Inject this into every agent + the risk manager."""
+
+    def __init__(self, db_url: str | None = None) -> None:
+        settings = get_settings()
+        self.db_url = db_url or settings.runtime.alphagrid_db_url
+        self.engine = create_engine(self.db_url, future=True)
+        Base.metadata.create_all(self.engine)
+        self._Session = sessionmaker(self.engine, expire_on_commit=False, future=True)
+        _install_immutability_guard(self.engine)
+
+    # ------------------------------------------------------------------ writes
+
+    def open_trade(self, req: OpenTradeRequest) -> str:
+        _validate_side(req.side)
+        if req.qty <= 0:
+            raise TrackRecordError(f"qty must be positive, got {req.qty}")
+        if req.entry_price <= 0:
+            raise TrackRecordError(f"entry_price must be positive, got {req.entry_price}")
+        trade_id = str(uuid.uuid4())
+        with self._Session.begin() as session:
+            session.add(
+                Trade(
+                    id=trade_id,
+                    entry_ts=req.entry_ts or _now_utc(),
+                    agent=req.agent,
+                    market=req.market,
+                    ticker=req.ticker,
+                    side=req.side.upper(),
+                    qty=req.qty,
+                    entry_price=req.entry_price,
+                    portfolio_value_at_entry=req.portfolio_value_at_entry,
+                    reason_text=req.reason_text,
+                    signal_payload=_json_safe(req.signal_payload),
+                    paper=1 if req.paper else 0,
+                )
+            )
+        return trade_id
+
+    def close_trade(self, req: CloseTradeRequest) -> Trade:
+        if req.exit_price <= 0:
+            raise TrackRecordError(f"exit_price must be positive, got {req.exit_price}")
+        with self._Session.begin() as session:
+            trade = session.get(Trade, req.trade_id)
+            if trade is None:
+                raise TradeNotFoundError(req.trade_id)
+            if trade.exit_ts is not None:
+                raise TrackRecordImmutableError(
+                    f"trade {req.trade_id} is closed at {trade.exit_ts.isoformat()}; "
+                    "closed trades are immutable"
+                )
+            trade.exit_ts = req.exit_ts or _now_utc()
+            trade.exit_price = req.exit_price
+            trade.fees = req.fees
+            trade.pnl = _compute_pnl(trade.side, trade.qty, trade.entry_price, req.exit_price, req.fees)
+            return trade
+
+    # ------------------------------------------------------------------ reads
+
+    def get(self, trade_id: str) -> Trade:
+        with self._Session() as session:
+            trade = session.get(Trade, trade_id)
+            if trade is None:
+                raise TradeNotFoundError(trade_id)
+            return trade
+
+    def open_positions(self, agent: str | None = None) -> list[Trade]:
+        with self._Session() as session:
+            stmt = select(Trade).where(Trade.exit_ts.is_(None))
+            if agent is not None:
+                stmt = stmt.where(Trade.agent == agent)
+            return list(session.scalars(stmt))
+
+    def closed_trades(
+        self,
+        agent: str | None = None,
+        since: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[Trade]:
+        with self._Session() as session:
+            stmt = select(Trade).where(Trade.exit_ts.is_not(None)).order_by(Trade.exit_ts.desc())
+            if agent is not None:
+                stmt = stmt.where(Trade.agent == agent)
+            if since is not None:
+                stmt = stmt.where(Trade.exit_ts >= since)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            return list(session.scalars(stmt))
+
+    # ------------------------------------------------------------------ metrics
+
+    def agent_stats(self, agent: str, lookback: int = 50) -> AgentStats:
+        trades = self.closed_trades(agent=agent, limit=lookback)
+        return AgentStats.from_trades(trades)
+
+    def running_sharpe(self, days: int = 30) -> float:
+        since = _now_utc() - timedelta(days=days)
+        trades = self.closed_trades(since=since)
+        returns = _daily_returns(trades)
+        if len(returns) < 2:
+            return 0.0
+        mean = sum(returns) / len(returns)
+        var = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+        std = math.sqrt(var)
+        if std == 0:
+            return 0.0
+        return (mean / std) * math.sqrt(252)
+
+    def drawdown(self, days: int = 30) -> float:
+        since = _now_utc() - timedelta(days=days)
+        trades = self.closed_trades(since=since)
+        if not trades:
+            return 0.0
+        trades_sorted = sorted(trades, key=lambda t: t.exit_ts)
+        equity = 0.0
+        peak = 0.0
+        worst = 0.0
+        for t in trades_sorted:
+            equity += t.pnl or 0.0
+            peak = max(peak, equity)
+            dd = (equity - peak) / peak if peak > 0 else 0.0
+            worst = min(worst, dd)
+        return abs(worst)
+
+    # ------------------------------------------------------------------ reports
+
+    def monthly_pdf_report(self, year: int, month: int, out_path: str) -> str:
+        """Stub — week 2 will implement via reportlab. Returns the path for the caller."""
+        # Intentionally not implemented yet. The contract is fixed so callers can be wired.
+        raise NotImplementedError("monthly_pdf_report scheduled for week 2 delivery")
+
+
+@dataclass(frozen=True)
+class AgentStats:
+    trades_counted: int
+    win_rate: float
+    avg_win: float
+    avg_loss: float
+
+    @classmethod
+    def from_trades(cls, trades: Iterable[Trade]) -> "AgentStats":
+        wins: list[float] = []
+        losses: list[float] = []
+        for t in trades:
+            if t.pnl is None:
+                continue
+            if t.pnl > 0:
+                wins.append(t.pnl)
+            elif t.pnl < 0:
+                losses.append(abs(t.pnl))
+        total = len(wins) + len(losses)
+        if total == 0:
+            return cls(trades_counted=0, win_rate=0.0, avg_win=0.0, avg_loss=0.0)
+        return cls(
+            trades_counted=total,
+            win_rate=len(wins) / total,
+            avg_win=(sum(wins) / len(wins)) if wins else 0.0,
+            avg_loss=(sum(losses) / len(losses)) if losses else 0.0,
+        )
+
+
+# ---------------------------------------------------------------------- helpers
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _validate_side(side: str) -> None:
+    if side.upper() not in {"BUY", "SELL", "LONG", "SHORT"}:
+        raise TrackRecordError(f"invalid side {side!r}")
+
+
+def _compute_pnl(side: str, qty: float, entry: float, exit_: float, fees: float) -> float:
+    direction = 1.0 if side.upper() in {"BUY", "LONG"} else -1.0
+    return direction * (exit_ - entry) * qty - fees
+
+
+def _json_safe(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        json.dumps(payload, default=str)
+    except (TypeError, ValueError) as exc:
+        raise TrackRecordError(f"signal_payload not JSON-serializable: {exc}") from exc
+    return payload
+
+
+def _daily_returns(trades: list[Trade]) -> list[float]:
+    by_day: dict[str, float] = {}
+    for t in trades:
+        if t.pnl is None or t.portfolio_value_at_entry <= 0:
+            continue
+        day = t.exit_ts.date().isoformat()
+        by_day[day] = by_day.get(day, 0.0) + (t.pnl / t.portfolio_value_at_entry)
+    return list(by_day.values())
+
+
+def _install_immutability_guard(engine) -> None:
+    """SQLAlchemy event hook: reject any UPDATE that touches a row whose exit_ts
+    was already set when the session loaded it.
+    """
+
+    @event.listens_for(Session, "before_flush")
+    def _guard(session, _flush_context, _instances):  # type: ignore[no-redef]
+        for obj in session.dirty:
+            if not isinstance(obj, Trade):
+                continue
+            hist = _get_history(session, obj)
+            if hist is not None and hist.exit_ts is not None:
+                raise TrackRecordImmutableError(
+                    f"trade {obj.id} was already closed at {hist.exit_ts.isoformat()}; "
+                    "closed trades cannot be modified"
+                )
+
+    @event.listens_for(Session, "do_orm_execute")
+    def _block_deletes(orm_execute_state):  # type: ignore[no-redef]
+        if orm_execute_state.is_delete:
+            raise TrackRecordImmutableError("DELETE is not permitted on the trade log")
+
+
+def _get_history(session: Session, obj: Trade) -> Trade | None:
+    """Read the row as it existed before this transaction's edits."""
+    try:
+        return session.query(Trade).populate_existing().get(obj.id)  # type: ignore[no-any-return]
+    except NoResultFound:
+        return None
