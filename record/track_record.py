@@ -20,19 +20,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from sqlalchemy import (
-    JSON,
-    Column,
     DateTime,
-    Float,
     Index,
-    Integer,
-    String,
     create_engine,
     event,
-    inspect as sa_inspect,
     select,
 )
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    sessionmaker,
+)
 
 from config.settings import get_settings
 
@@ -56,22 +56,22 @@ class Base(DeclarativeBase):
 class Trade(Base):
     __tablename__ = "trades"
 
-    id = Column(String(36), primary_key=True)
-    entry_ts = Column(DateTime(timezone=True), nullable=False, index=True)
-    exit_ts = Column(DateTime(timezone=True), nullable=True, index=True)
-    agent = Column(String(64), nullable=False, index=True)
-    market = Column(String(16), nullable=False)
-    ticker = Column(String(32), nullable=False, index=True)
-    side = Column(String(8), nullable=False)
-    qty = Column(Float, nullable=False)
-    entry_price = Column(Float, nullable=False)
-    exit_price = Column(Float, nullable=True)
-    pnl = Column(Float, nullable=True)
-    fees = Column(Float, nullable=False, default=0.0)
-    portfolio_value_at_entry = Column(Float, nullable=False)
-    reason_text = Column(String, nullable=False)
-    signal_payload = Column(JSON, nullable=False, default=dict)
-    paper = Column(Integer, nullable=False, default=1)
+    id: Mapped[str] = mapped_column(primary_key=True)
+    entry_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    exit_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    agent: Mapped[str] = mapped_column(index=True)
+    market: Mapped[str]
+    ticker: Mapped[str] = mapped_column(index=True)
+    side: Mapped[str]
+    qty: Mapped[float]
+    entry_price: Mapped[float]
+    exit_price: Mapped[float | None] = mapped_column(nullable=True)
+    pnl: Mapped[float | None] = mapped_column(nullable=True)
+    fees: Mapped[float] = mapped_column(default=0.0)
+    portfolio_value_at_entry: Mapped[float]
+    reason_text: Mapped[str]
+    signal_payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    paper: Mapped[int] = mapped_column(default=1)
 
     __table_args__ = (Index("ix_trades_agent_entry_ts", "agent", "entry_ts"),)
 
@@ -99,6 +99,35 @@ class CloseTradeRequest:
     exit_ts: datetime | None = None
 
 
+@dataclass(frozen=True)
+class AgentStats:
+    trades_counted: int
+    win_rate: float
+    avg_win: float
+    avg_loss: float
+
+    @classmethod
+    def from_trades(cls, trades: Iterable[Trade]) -> "AgentStats":
+        wins: list[float] = []
+        losses: list[float] = []
+        for t in trades:
+            if t.pnl is None:
+                continue
+            if t.pnl > 0:
+                wins.append(t.pnl)
+            elif t.pnl < 0:
+                losses.append(abs(t.pnl))
+        total = len(wins) + len(losses)
+        if total == 0:
+            return cls(trades_counted=0, win_rate=0.0, avg_win=0.0, avg_loss=0.0)
+        return cls(
+            trades_counted=total,
+            win_rate=len(wins) / total,
+            avg_win=(sum(wins) / len(wins)) if wins else 0.0,
+            avg_loss=(sum(losses) / len(losses)) if losses else 0.0,
+        )
+
+
 class TrackRecord:
     """Append-only trade log facade. Inject this into every agent + the risk manager."""
 
@@ -108,7 +137,7 @@ class TrackRecord:
         self.engine = create_engine(self.db_url, future=True)
         Base.metadata.create_all(self.engine)
         self._Session = sessionmaker(self.engine, expire_on_commit=False, future=True)
-        _install_immutability_guard(self.engine)
+        _install_immutability_guard()
 
     # ------------------------------------------------------------------ writes
 
@@ -212,7 +241,7 @@ class TrackRecord:
         trades = self.closed_trades(since=since)
         if not trades:
             return 0.0
-        trades_sorted = sorted(trades, key=lambda t: t.exit_ts)
+        trades_sorted = sorted(trades, key=lambda t: t.exit_ts or _now_utc())
         equity = 0.0
         peak = 0.0
         worst = 0.0
@@ -223,41 +252,9 @@ class TrackRecord:
             worst = min(worst, dd)
         return abs(worst)
 
-    # ------------------------------------------------------------------ reports
-
     def monthly_pdf_report(self, year: int, month: int, out_path: str) -> str:
         """Stub — week 2 will implement via reportlab. Returns the path for the caller."""
-        # Intentionally not implemented yet. The contract is fixed so callers can be wired.
         raise NotImplementedError("monthly_pdf_report scheduled for week 2 delivery")
-
-
-@dataclass(frozen=True)
-class AgentStats:
-    trades_counted: int
-    win_rate: float
-    avg_win: float
-    avg_loss: float
-
-    @classmethod
-    def from_trades(cls, trades: Iterable[Trade]) -> "AgentStats":
-        wins: list[float] = []
-        losses: list[float] = []
-        for t in trades:
-            if t.pnl is None:
-                continue
-            if t.pnl > 0:
-                wins.append(t.pnl)
-            elif t.pnl < 0:
-                losses.append(abs(t.pnl))
-        total = len(wins) + len(losses)
-        if total == 0:
-            return cls(trades_counted=0, win_rate=0.0, avg_win=0.0, avg_loss=0.0)
-        return cls(
-            trades_counted=total,
-            win_rate=len(wins) / total,
-            avg_win=(sum(wins) / len(wins)) if wins else 0.0,
-            avg_loss=(sum(losses) / len(losses)) if losses else 0.0,
-        )
 
 
 # ---------------------------------------------------------------------- helpers
@@ -288,39 +285,53 @@ def _json_safe(payload: dict[str, Any]) -> dict[str, Any]:
 def _daily_returns(trades: list[Trade]) -> list[float]:
     by_day: dict[str, float] = {}
     for t in trades:
-        if t.pnl is None or t.portfolio_value_at_entry <= 0:
+        if t.pnl is None or t.portfolio_value_at_entry <= 0 or t.exit_ts is None:
             continue
         day = t.exit_ts.date().isoformat()
         by_day[day] = by_day.get(day, 0.0) + (t.pnl / t.portfolio_value_at_entry)
     return list(by_day.values())
 
 
-def _install_immutability_guard(engine) -> None:
-    """SQLAlchemy event hook: reject any UPDATE that touches a row whose exit_ts
-    was already set when the session loaded it.
+_GUARD_INSTALLED = False
+
+
+def _install_immutability_guard() -> None:
+    """Session-level event hooks that block:
+      * any modification to a Trade row whose persisted exit_ts is non-null
+      * any DELETE statement against trades
+
+    The guard inspects attribute history so it sees the row's *prior* state,
+    not the in-memory edited one.
     """
+    global _GUARD_INSTALLED
+    if _GUARD_INSTALLED:
+        return
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.orm.base import NO_VALUE
 
     @event.listens_for(Session, "before_flush")
-    def _guard(session, _flush_context, _instances):  # type: ignore[no-redef]
+    def _guard(session, _flush_context, _instances):
         for obj in session.dirty:
             if not isinstance(obj, Trade):
                 continue
-            hist = _get_history(session, obj)
-            if hist is not None and hist.exit_ts is not None:
+            state = sa_inspect(obj)
+            exit_ts_attr = state.attrs.exit_ts
+            history = exit_ts_attr.history
+            if history.deleted:
+                prior_exit_ts = history.deleted[0]
+            else:
+                loaded = exit_ts_attr.loaded_value
+                prior_exit_ts = None if loaded is NO_VALUE else loaded
+            if prior_exit_ts is not None:
                 raise TrackRecordImmutableError(
-                    f"trade {obj.id} was already closed at {hist.exit_ts.isoformat()}; "
-                    "closed trades cannot be modified"
+                    f"trade {obj.id} was already closed at "
+                    f"{prior_exit_ts.isoformat()}; closed trades cannot be modified"
                 )
 
     @event.listens_for(Session, "do_orm_execute")
-    def _block_deletes(orm_execute_state):  # type: ignore[no-redef]
+    def _block_deletes(orm_execute_state):
         if orm_execute_state.is_delete:
             raise TrackRecordImmutableError("DELETE is not permitted on the trade log")
 
-
-def _get_history(session: Session, obj: Trade) -> Trade | None:
-    """Read the row as it existed before this transaction's edits."""
-    try:
-        return session.query(Trade).populate_existing().get(obj.id)  # type: ignore[no-any-return]
-    except NoResultFound:
-        return None
+    _GUARD_INSTALLED = True
