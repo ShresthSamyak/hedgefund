@@ -131,10 +131,24 @@ Browser → Vercel (Next.js)
 python -m pytest tests/ -v
 ```
 
-160 tests covering the trade log, risk manager, all 8 agents, the indicator
+196 tests covering the trade log, risk manager, all 8 agents, the indicator
 math, pairs cointegration / OU half-life, news poller, candle builder,
-signal bus, the live Binance WebSocket tick handler, and the pre-burn-in
-health check.
+signal bus, the live Binance WebSocket tick handler, the FastAPI backend,
+and the pre-burn-in health check.
+
+## Continuous integration
+
+Three GitHub Actions workflows live in `.github/workflows/`:
+
+| Workflow | Triggers on | Does |
+|---|---|---|
+| `python-ci.yml` | Push / PR touching `*.py`, `test-requirements.txt`, `pyproject.toml` | `ruff check` + `pytest` against `test-requirements.txt` (lightweight; no torch / ccxt / network) |
+| `web-ci.yml`    | Push / PR touching `web/` | `npm install` + `npm run typecheck` + `npm run build` (Node 20) |
+| `deploy.yml`    | `python-ci` succeeds on `main`, or manual dispatch | SSHes into Azure, `git pull`, `pip install`, restarts `alphagrid` + `alphagrid-api` |
+
+The deploy workflow skips silently when `AZURE_HOST` / `AZURE_SSH_KEY`
+aren't configured, so the workflow file is safe to merge before you've set
+up the VM.
 
 ## Pre-burn-in health check
 
