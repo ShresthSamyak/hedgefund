@@ -144,7 +144,24 @@ python -m tools.kill_switch_demo
 # a human-readable reports/YYYY-MM-DD.txt summary.
 python -m tools.daily_snapshot
 python -m tools.daily_snapshot --window-hours 168    # weekly view
+
+# The paper-trading scorecard. Computes the 6 readiness metrics
+# (Sharpe, max DD, win rate, payoff, per-agent pnl, signal-to-trade lag)
+# and prints PASS/FAIL per metric. Exit code 0 only if every metric passes.
+python -m tools.weekly_report
+python -m tools.weekly_report --window-days 30       # monthly view
 ```
+
+## Paper-to-live triggers
+
+Don't flip `PAPER_MODE=false` until all four are true (see `tools/weekly_report.py`):
+
+1. 60+ Indian trading days completed in paper mode
+2. Sharpe >= 0.8 on paper trade logs (not on backtests)
+3. Live results match paper-trading results within 20%
+4. Zero critical bugs for 30 consecutive days
+
+Then start with **₹5K**, not ₹20K. Run 30 days at small size before scaling.
 
 ## Next milestone
 
