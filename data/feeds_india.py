@@ -128,6 +128,7 @@ class StaticIndiaFeed:
     def __init__(self) -> None:
         self._news: dict[str, list[NewsItem]] = {}
         self._prices: dict[str, PricePoint] = {}
+        self._ohlc: dict[str, list[DatedBar]] = {}
 
     def set_news(self, ticker: str, items: list[NewsItem]) -> None:
         self._news[ticker] = items
@@ -137,11 +138,17 @@ class StaticIndiaFeed:
             ticker=ticker, ts=datetime.now(timezone.utc), close=close, volume=volume
         )
 
+    def set_ohlc(self, ticker: str, bars: list[DatedBar]) -> None:
+        self._ohlc[ticker] = bars
+
     def fetch_news(self, ticker: str, *, limit: int = 20) -> list[NewsItem]:
         return list(self._news.get(ticker, []))[:limit]
 
     def fetch_latest_close(self, ticker: str) -> PricePoint | None:
         return self._prices.get(ticker)
+
+    def fetch_ohlc(self, ticker: str, *, days: int = 60) -> list[DatedBar]:
+        return list(self._ohlc.get(ticker, []))[-days:]
 
 
 def _parse_rss_time(parsed) -> datetime:
