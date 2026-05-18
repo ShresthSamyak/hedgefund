@@ -30,6 +30,7 @@ class AngelOne(BaseSettings):
     client_code: str = ""
     password: str = ""
     totp_secret: str = ""
+    use_sandbox: bool = True   # paper-mode default; flip via ANGEL_USE_SANDBOX=false
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ANGEL_", extra="ignore")
 
