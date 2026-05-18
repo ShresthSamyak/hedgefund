@@ -129,3 +129,23 @@ class ResearchIndia(Agent):
 
         self.research_log.write_batch(signals)
         log.info("research_india wrote %d signals across %d tickers", len(signals), len(self.universe))
+
+    # ------------------------------------------------------------------ llm helper
+
+    def _summarise(self, ticker: str, items: list[NewsItem], avg_score: float) -> str | None:
+        bullets = "\n".join(f"- {n.title} ({n.source})" for n in items[:5])
+        direction = "positive" if avg_score > 0 else "negative"
+        prompt = (
+            f"You are a financial analyst for Indian equities.\n"
+            f"Ticker: {ticker}\n"
+            f"FinBERT aggregate score: {avg_score:+.2f} ({direction}).\n"
+            f"Recent headlines:\n{bullets}\n\n"
+            f"In ONE sentence, state the likely trading impact on {ticker} "
+            f"and a confidence 0.0-1.0. Format: IMPACT|CONFIDENCE|REASON."
+        )
+        try:
+            resp = self.llm.complete(prompt, tier="fast")
+            return (resp.text or "").strip() or None
+        except Exception:
+            log.exception("llm summary failed for %s", ticker)
+            return None
