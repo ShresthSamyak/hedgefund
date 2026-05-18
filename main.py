@@ -4,10 +4,11 @@ Wires APScheduler, registers each enabled agent at its cadence, and holds
 the process open. Paper-mode is on by default (see .env.example).
 
 Real implementations live now:
-  * research_india   — every 15 min, accumulates news + sentiment + prices
-  * research_crypto  — every 8h, accumulates funding rates + regime signal
-  * trading_funding  — every 8h, reads research_log and proposes carry trades
-  * trading_momentum — every 5 min during IST session, EWMA cross on Nifty subset
+  * research_india    — every 15 min, accumulates news + sentiment + prices
+  * research_crypto   — every 8h, accumulates funding rates + regime signal
+  * trading_funding   — every 8h, reads research_log and proposes carry trades
+  * trading_momentum  — every 5 min during IST session, EWMA cross on Nifty subset
+  * trading_sentiment — every 15 min, decay-weighted FinBERT signal -> small longs
 
 Other trading agents are stubs until their build-plan slot.
 """
@@ -91,9 +92,24 @@ def _enabled_agents() -> Iterable[Agent]:
             trade_router=trade_router,
         )
 
+    # Indian-equities agents share the same feed object.
+    india_feed = GoogleNewsAndYFinanceFeed() if (
+        toggles.enable_trading_momentum or toggles.enable_trading_sentiment
+    ) else None
+
     if toggles.enable_trading_momentum:
+        assert india_feed is not None
         yield TradingMomentum(
-            feed=GoogleNewsAndYFinanceFeed(),
+            feed=india_feed,
+            research_log=research_log,
+            track_record=track_record,
+            trade_router=trade_router,
+        )
+
+    if toggles.enable_trading_sentiment:
+        assert india_feed is not None
+        yield TradingSentiment(
+            feed=india_feed,
             research_log=research_log,
             track_record=track_record,
             trade_router=trade_router,
@@ -101,8 +117,6 @@ def _enabled_agents() -> Iterable[Agent]:
 
     # Stubs — raise NotImplementedError on their first tick; the scheduler
     # logs and moves on.
-    if toggles.enable_trading_sentiment:
-        yield TradingSentiment()
     if toggles.enable_trading_pairs:
         yield TradingPairs()
     if toggles.enable_trading_trend:
