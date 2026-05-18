@@ -23,6 +23,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 from agents.base import Agent
 from backtest.clock import VirtualClock
@@ -32,7 +33,6 @@ from infra.signal_bus import InMemoryBus
 from record.research_log import ResearchLog
 from record.track_record import TrackRecord
 from risk.risk_manager import Clock, RiskManager, StaticRegime
-from zoneinfo import ZoneInfo
 
 log = logging.getLogger("alphagrid.backtest")
 

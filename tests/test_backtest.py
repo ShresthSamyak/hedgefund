@@ -22,7 +22,6 @@ from models.indicators import OHLCBar
 from record.research_log import ResearchLog
 from record.track_record import TrackRecord
 
-
 # ----------------------------------------------------------------- clock
 
 

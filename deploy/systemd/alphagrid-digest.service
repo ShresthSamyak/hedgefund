@@ -1,0 +1,14 @@
+[Unit]
+Description=AlphaGrid Telegram daily digest (one-shot, fired by .timer)
+After=alphagrid-snapshot.service
+
+[Service]
+Type=oneshot
+User=alphagrid
+Group=alphagrid
+WorkingDirectory=/home/alphagrid/hedgefund
+EnvironmentFile=/home/alphagrid/hedgefund/.env
+ExecStart=/home/alphagrid/hedgefund/venv/bin/python -m tools.telegram_digest
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alphagrid-digest

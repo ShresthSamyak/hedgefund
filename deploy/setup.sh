@@ -122,7 +122,7 @@ install_systemd_units() {
   cp "${APP_DIR}/deploy/systemd/"*.timer /etc/systemd/system/
   systemctl daemon-reload
   systemctl enable alphagrid.service alphagrid-api.service \
-    alphagrid-snapshot.timer alphagrid-weekly.timer
+    alphagrid-snapshot.timer alphagrid-weekly.timer alphagrid-digest.timer
 }
 
 install_nginx() {

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AlphaGrid Telegram digest at 06:30 IST (01:00 UTC), 30 min after snapshot
+
+[Timer]
+OnCalendar=*-*-* 01:00:00 UTC
+Persistent=true
+Unit=alphagrid-digest.service
+
+[Install]
+WantedBy=timers.target
