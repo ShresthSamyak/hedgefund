@@ -1,7 +1,14 @@
 """Tests for the Telegram digest formatter."""
 from __future__ import annotations
 
-from comms.telegram_digest import TELEGRAM_LIMIT, format_digest, send_digest
+from comms.telegram_digest import (
+    NARRATIVE_MAX_CHARS,
+    TELEGRAM_LIMIT,
+    build_narrative,
+    format_digest,
+    send_digest,
+)
+from models.llm_client import LLMResponse, NullLLM
 from tools.daily_snapshot import Snapshot
 
 
