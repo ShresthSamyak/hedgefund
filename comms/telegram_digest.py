@@ -104,7 +104,7 @@ def format_digest(snap: Snapshot, narrative: str | None = None) -> str:
         f"dd(30d): {snap.drawdown_30d:.2%}"
     )
     if snap.kill_switch_active:
-        lines.append("⚠ KILL SWITCH ACTIVE — new trades blocked")
+        lines.append("[!] KILL SWITCH ACTIVE - new trades blocked")
 
     if snap.per_agent:
         lines.append("")
