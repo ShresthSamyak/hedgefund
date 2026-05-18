@@ -25,9 +25,9 @@ from risk.risk_manager import RiskManager, TradeProposal
 
 def _hr(title: str) -> None:
     print()
-    print("─" * 60)
+    print("-" * 60)
     print(title)
-    print("─" * 60)
+    print("-" * 60)
 
 
 def _seed_trade(
@@ -91,7 +91,7 @@ def main() -> int:
     print(f"  outcome: {outcome.state}")
     print(f"  reason : {outcome.reason}")
     if outcome.state == "rejected_by_risk" and "kill switch" in outcome.reason.lower():
-        print("  ✓ kill switch fired correctly")
+        print("  [OK] kill switch fired correctly")
     else:
         print("  ✗ kill switch did NOT fire — investigate")
         return 1
