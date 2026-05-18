@@ -199,6 +199,7 @@ class TradingSentiment(Agent):
 
         # Rule 3 — max holding window.
         entry_ts_str = payload.get("entry_ts")
+        entry_ts: datetime | None
         if entry_ts_str:
             try:
                 entry_ts = datetime.fromisoformat(entry_ts_str)
@@ -207,6 +208,8 @@ class TradingSentiment(Agent):
         else:
             entry_ts = open_pos.entry_ts
         if entry_ts is not None:
+            if entry_ts.tzinfo is None:
+                entry_ts = entry_ts.replace(tzinfo=timezone.utc)
             held = (self._now() - entry_ts).total_seconds() / 86400.0
             if held >= sp.sentiment_max_holding_days:
                 self._close(ticker, open_pos, open_pos.entry_price, reason=f"held {held:.1f}d >= max")
@@ -296,14 +299,19 @@ def _headline_count(rec: SignalRecord) -> int:
     return int(payload.get("headline_count", 0))
 
 
-def _decay_weighted(records: list[SignalRecord], halflife_hours: float, now: datetime) -> float:
-    """Exponential decay: weight = 0.5 ^ (age_hours / halflife)."""
+def _decay_weighted(records, halflife_hours: float, now: datetime) -> float:
+    """Exponential decay: weight = 0.5 ^ (age_hours / halflife).
+
+    SQLite drops tzinfo on read, so we normalize any naive timestamp to UTC
+    before subtracting. Accepts anything with `.ts` and `.value` attributes.
+    """
     if not records:
         return 0.0
     total_w = 0.0
     total_wv = 0.0
     for r in records:
-        age_hours = max(0.0, (now - r.ts).total_seconds() / 3600.0)
+        ts = r.ts if r.ts.tzinfo is not None else r.ts.replace(tzinfo=timezone.utc)
+        age_hours = max(0.0, (now - ts).total_seconds() / 3600.0)
         w = math.pow(0.5, age_hours / halflife_hours) if halflife_hours > 0 else 1.0
         total_w += w
         total_wv += w * r.value
