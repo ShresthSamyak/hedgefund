@@ -4,9 +4,10 @@ Wires APScheduler, registers each enabled agent at its cadence, and holds
 the process open. Paper-mode is on by default (see .env.example).
 
 Real implementations live now:
-  * research_india  — every 15 min, accumulates news + sentiment + prices
-  * research_crypto — every 8h, accumulates funding rates + regime signal
-  * trading_funding — every 8h, reads research_log and proposes carry trades
+  * research_india   — every 15 min, accumulates news + sentiment + prices
+  * research_crypto  — every 8h, accumulates funding rates + regime signal
+  * trading_funding  — every 8h, reads research_log and proposes carry trades
+  * trading_momentum — every 5 min during IST session, EWMA cross on Nifty subset
 
 Other trading agents are stubs until their build-plan slot.
 """
@@ -90,10 +91,16 @@ def _enabled_agents() -> Iterable[Agent]:
             trade_router=trade_router,
         )
 
+    if toggles.enable_trading_momentum:
+        yield TradingMomentum(
+            feed=GoogleNewsAndYFinanceFeed(),
+            research_log=research_log,
+            track_record=track_record,
+            trade_router=trade_router,
+        )
+
     # Stubs — raise NotImplementedError on their first tick; the scheduler
     # logs and moves on.
-    if toggles.enable_trading_momentum:
-        yield TradingMomentum()
     if toggles.enable_trading_sentiment:
         yield TradingSentiment()
     if toggles.enable_trading_pairs:

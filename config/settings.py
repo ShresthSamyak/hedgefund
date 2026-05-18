@@ -113,7 +113,7 @@ class StrategyParams(BaseSettings):
     momentum_atr_period: int = 14
     momentum_atr_stop_mult: float = 2.0       # 2x ATR stop (swing)
     momentum_atr_target_mult: float = 4.0     # 4x ATR target -> 1:2 R:R
-    momentum_min_history_bars: int = 60       # need enough bars for ADX and 200-EMA warmup
+    momentum_min_history_bars: int = 210      # 200-EMA needs 200 bars to seed + buffer
     momentum_volume_ratio_min: float = 1.0    # cross bar volume >= rolling median
     momentum_volume_lookback: int = 20
     momentum_skip_first_minutes: int = 15     # avoid the open-bell whipsaw
