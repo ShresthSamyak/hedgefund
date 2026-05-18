@@ -93,7 +93,7 @@ def main() -> int:
     if outcome.state == "rejected_by_risk" and "kill switch" in outcome.reason.lower():
         print("  [OK] kill switch fired correctly")
     else:
-        print("  ✗ kill switch did NOT fire — investigate")
+        print("  [FAIL] kill switch did NOT fire - investigate")
         return 1
 
     _hr("Step 5 — recovery: massive winner does NOT clear the historical DD")
@@ -103,9 +103,9 @@ def main() -> int:
     outcome2 = router.submit(_proposal())
     print(f"  outcome: {outcome2.state}  (expected: rejected_by_risk)")
     if outcome2.state != "rejected_by_risk":
-        print("  ✗ kill switch unexpectedly released")
+        print("  [FAIL] kill switch unexpectedly released")
         return 1
-    print("  ✓ kill switch correctly persists — release only by time")
+    print("  [OK] kill switch correctly persists - release only by time")
 
     _hr("All assertions passed — drawdown safety net is wired correctly.")
     print()
