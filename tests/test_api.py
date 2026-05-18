@@ -18,10 +18,13 @@ from record.track_record import (
 
 
 @pytest.fixture
-def client(monkeypatch):
-    """Swap in an in-memory DB for each test so state is isolated."""
-    tr = TrackRecord(db_url="sqlite:///:memory:")
-    rl = ResearchLog(db_url="sqlite:///:memory:")
+def client(tmp_path, monkeypatch):
+    """File-backed SQLite under tmp_path. FastAPI runs sync endpoints in a
+    threadpool, so `:memory:` is unsafe — each thread gets its own DB.
+    """
+    db_url = f"sqlite:///{tmp_path / 'test.db'}"
+    tr = TrackRecord(db_url=db_url)
+    rl = ResearchLog(db_url=db_url)
     monkeypatch.setattr(STATE, "track_record", tr)
     monkeypatch.setattr(STATE, "research_log", rl)
     with TestClient(app) as c:
