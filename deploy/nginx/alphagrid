@@ -1,0 +1,36 @@
+# /etc/nginx/sites-available/alphagrid
+# Reverse-proxy in front of the FastAPI dashboard backend.
+# The Next.js frontend lives on Vercel and talks to this host on /, /portfolio,
+# /agents, /trades, /equity, /live (WebSocket).
+#
+# To enable HTTPS via Let's Encrypt:
+#     sudo apt install -y certbot python3-certbot-nginx
+#     sudo certbot --nginx -d <your-domain>
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    client_max_body_size 1m;
+
+    # WebSocket upgrade headers.
+    location /live {
+        proxy_pass http://127.0.0.1:8000/live;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;     # keep idle WS alive
+        proxy_send_timeout 86400s;
+    }
+
+    # REST endpoints.
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
