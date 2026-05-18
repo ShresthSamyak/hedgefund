@@ -38,6 +38,7 @@ from data.live_crypto_stream import BinanceWebSocketStream
 from execution.trade_router import TradeRouter
 from infra.signal_bus import InMemoryBus, SignalBus
 from models.finbert_scorer import FinBertScorer, NullScorer, Scorer
+from models.llm_client import LLMClient, build_llm_client
 from record.research_log import ResearchLog
 from record.track_record import TrackRecord
 from risk.risk_manager import RiskManager
@@ -174,7 +175,7 @@ def _make_scorer() -> Scorer:
         return NullScorer()
 
 
-def _enabled_agents(ctx: AppContext, scorer: Scorer) -> Iterable[Agent]:
+def _enabled_agents(ctx: AppContext, scorer: Scorer, llm: LLMClient) -> Iterable[Agent]:
     toggles = ctx.settings.agents
 
     if toggles.enable_research_india:
@@ -182,6 +183,7 @@ def _enabled_agents(ctx: AppContext, scorer: Scorer) -> Iterable[Agent]:
             feed=ctx.india_feed(),
             research_log=ctx.research_log,
             scorer=scorer,
+            llm=llm,
         )
 
     if toggles.enable_research_crypto:
@@ -251,6 +253,7 @@ def main() -> int:
 
     ctx = AppContext()
     scorer = _make_scorer()
+    llm = build_llm_client()
 
     # Tick + news speed — daemon threads, run independent of the scheduler.
     ctx.start_live_crypto_stream()
@@ -258,7 +261,7 @@ def main() -> int:
 
     # Bar speed — APScheduler.
     scheduler = BlockingScheduler(timezone="UTC")
-    for agent in _enabled_agents(ctx, scorer):
+    for agent in _enabled_agents(ctx, scorer, llm):
         interval = agent.cadence.every.total_seconds()
         scheduler.add_job(
             _safe_run,
