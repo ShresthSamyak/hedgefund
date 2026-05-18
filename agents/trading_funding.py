@@ -105,7 +105,7 @@ class TradingFunding(Agent):
             return
 
         # Rule 3 — current rate above threshold.
-        if latest.value < sp.funding_enter_bps:
+        if latest.value < sp.funding_enter_rate:
             return
 
         # Rule 4 — stability across last N windows.
@@ -113,7 +113,7 @@ class TradingFunding(Agent):
         if len(window) < sp.funding_stability_windows:
             log.debug("[%s] only %d prints — not enough history", symbol, len(window))
             return
-        if any(r.value < sp.funding_enter_bps for r in window):
+        if any(r.value < sp.funding_enter_rate for r in window):
             log.debug("[%s] funding not stable across %d prints", symbol, sp.funding_stability_windows)
             return
 
