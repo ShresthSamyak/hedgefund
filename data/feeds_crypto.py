@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
+from models.indicators import OHLCBar
+
 
 log = logging.getLogger(__name__)
 
@@ -22,11 +24,18 @@ class FundingPoint:
     mark_price: float | None = None
 
 
+@dataclass(frozen=True)
+class DatedCryptoBar:
+    ts: datetime
+    bar: OHLCBar
+
+
 class CryptoFeed(Protocol):
     def fetch_funding_rate(self, symbol: str) -> FundingPoint: ...
     def fetch_funding_history(
         self, symbol: str, since_ms: int | None = None, limit: int = 100
     ) -> list[FundingPoint]: ...
+    def fetch_ohlc(self, symbol: str, *, timeframe: str = "4h", limit: int = 200) -> list[DatedCryptoBar]: ...
 
 
 class BinanceFeed:
