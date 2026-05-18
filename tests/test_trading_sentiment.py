@@ -133,31 +133,20 @@ def test_does_not_enter_when_too_few_headlines(monkeypatch) -> None:
 
 
 def test_does_not_enter_when_decay_weighted_below_threshold(monkeypatch) -> None:
+    """Latest record is hot, but older records are neutral — decay-weighted
+    average drags below threshold and the entry is blocked. Catches stale
+    signals where a single recent positive headline rides on a neutral past.
+    """
     agent, feed, rl, tr = _build_env(now=_now_fn())
     monkeypatch.setattr(agent.settings.strategy, "sentiment_universe", ("HDFCBANK",))
+    monkeypatch.setattr(agent.settings.strategy, "sentiment_decay_halflife_hours", 6.0)
     _seed_steady_prices(feed, "HDFCBANK")
-    # Three values all 0.73; but place them far in the past so decay drags
-    # the weighted score below the 0.72 threshold... actually since they all
-    # equal 0.73, decay-weighted average is still 0.73. Instead, mix older
-    # high values with a recent value just at threshold so weighted < threshold.
-    # Simpler: put the *recent* values near threshold and older just-above —
-    # decay weights recent more, but our "all >= entry" rule means every
-    # window value is >= 0.72 already. So craft so decay drops it below 0.72.
-    #
-    # Use values [0.72, 0.72, 0.72] — borderline — and the helper writes them
-    # at 15min spacing, so newest is ~30min old. Decay halflife is 24h, so
-    # decay-weighted average = ~0.72 too. Pad with much older non-counted
-    # records and verify the consecutive_windows look-back is *only* the last 3.
-    #
-    # Cleanest construction: 3 records *exactly* at threshold (decay-weighted
-    # still hovers at threshold — won't reliably fail). So instead bump the
-    # entry threshold up for this test to exercise the decay rule.
-    monkeypatch.setattr(agent.settings.strategy, "sentiment_entry_threshold", 0.85)
-    monkeypatch.setattr(agent.settings.strategy, "sentiment_decay_halflife_hours", 0.1)
-    # All values pass the >=threshold filter individually, but with a very
-    # short halflife and aged records the decay-weighted average drops below.
-    old = IST_OPEN.astimezone(timezone.utc) - timedelta(hours=10)
-    _seed_sentiment(rl, "HDFCBANK", [0.85, 0.86, 0.85], base_ts=old)
+    # Order: writes oldest first. Newest record is hot (0.80) but older
+    # records are neutral (0.10). Decay weights the latest most heavily,
+    # but with halflife=6h and our 15-min spacing the older two still
+    # contribute enough to pull the weighted avg below 0.72.
+    base_old = IST_OPEN.astimezone(timezone.utc) - timedelta(hours=12)
+    _seed_sentiment(rl, "HDFCBANK", [0.10, 0.10, 0.80], base_ts=base_old)
     agent.run_once()
     assert not tr.open_positions(agent="trading_sentiment")
 

@@ -10,11 +10,12 @@ Refinements from the 2025-2026 literature (see [[project-sentiment-refinements]]
     1. Inside IST session, past the open-bell skip window.
     2. No open position for this ticker.
     3. Past the cooldown window since our last exit on this ticker.
-    4. Last N sentiment_score records all >= entry_threshold.
-    5. Each contributing record had at least `sentiment_min_headlines`
-       headlines — single-headline signals are too noisy.
-    6. Time-decay-weighted average is also >= entry_threshold (catches a
-       fade that hasn't crossed the threshold yet).
+    4. Latest sentiment_score >= entry_threshold (signal is hot NOW).
+    5. Latest record had at least `sentiment_min_headlines` headlines —
+       single-headline signals are too noisy.
+    6. Time-decay-weighted average over the last N records >= threshold.
+       Catches stale signals: a hot latest print backed by neutral history
+       doesn't pass.
     7. Cross-bar volume >= rolling-median volume.
 
   Sizing:
@@ -108,19 +109,22 @@ class TradingSentiment(Agent):
         if len(window) < sp.sentiment_consecutive_windows:
             return
 
-        # Rule 4 — every record above the threshold.
-        if any(r.value < sp.sentiment_entry_threshold for r in window):
+        latest = window[0]
+
+        # Rule 4 — latest record is hot.
+        if latest.value < sp.sentiment_entry_threshold:
             return
 
-        # Rule 5 — each record backed by enough headlines.
-        if any(_headline_count(r) < sp.sentiment_min_headlines for r in window):
-            log.debug("[%s] window has thin-headline records — skip", ticker)
+        # Rule 5 — latest record backed by enough headlines.
+        if _headline_count(latest) < sp.sentiment_min_headlines:
+            log.debug("[%s] latest record has thin headlines — skip", ticker)
             return
 
-        # Rule 6 — decay-weighted average also passes.
+        # Rule 6 — decay-weighted recent average also above threshold.
+        # If the older records were neutral, this drags weighted < threshold.
         weighted = _decay_weighted(window, sp.sentiment_decay_halflife_hours, self._now())
         if weighted < sp.sentiment_entry_threshold:
-            log.debug("[%s] decay-weighted %.3f below threshold", ticker, weighted)
+            log.debug("[%s] decay-weighted %.3f below threshold — stale signal", ticker, weighted)
             return
 
         # ATR for sizing + bars for volume confirmation.
