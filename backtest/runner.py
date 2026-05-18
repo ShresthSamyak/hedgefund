@@ -30,6 +30,7 @@ from backtest.clock import VirtualClock
 from comms.approval_gate import NullApprovalGate
 from execution.trade_router import TradeRouter
 from infra.signal_bus import InMemoryBus
+from models.llm_client import LLMClient
 from record.research_log import ResearchLog
 from record.track_record import TrackRecord
 from risk.risk_manager import Clock, RiskManager, StaticRegime
@@ -94,6 +95,7 @@ class BacktestRunner:
         track_record: TrackRecord,
         research_log: ResearchLog,
         regime: str = "neutral",
+        llm: LLMClient | None = None,
     ) -> None:
         self.clock = clock
         self.track_record = track_record
@@ -109,6 +111,7 @@ class BacktestRunner:
             approval_gate=NullApprovalGate(),
             track_record=track_record,
             require_human_approval=False,
+            llm=llm,
         )
 
     def run(
