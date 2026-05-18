@@ -185,7 +185,8 @@ def _now_utc() -> datetime:
 
 
 def _ensure_json_safe(payload: dict[str, Any]) -> None:
+    """Match SQLAlchemy's strict JSON serializer — no `default=str` rescue."""
     try:
-        json.dumps(payload, default=str)
+        json.dumps(payload)
     except (TypeError, ValueError) as exc:
         raise ResearchLogError(f"payload not JSON-serializable: {exc}") from exc
