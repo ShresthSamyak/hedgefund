@@ -61,7 +61,7 @@ def _proposal() -> TradeProposal:
 
 def main() -> int:
     tr = TrackRecord(db_url="sqlite:///:memory:")
-    rm = RiskManager(tr)  # uses SystemClock — current time
+    rm = RiskManager(tr)  # uses SystemClock - current time
     router = TradeRouter(
         risk_manager=rm,
         approval_gate=NullApprovalGate(),
@@ -75,18 +75,18 @@ def main() -> int:
     pre = router.submit(_proposal())
     print(f"  fresh trade -> {pre.state}: {pre.reason}")
 
-    _hr("Step 2 — seed a peak winner of +₹1000")
+    _hr("Step 2 - seed a peak winner of +1000")
     _seed_trade(tr, ticker="PEAK", entry=100.0, exit_price=200.0, qty=10.0,
                 ts=base, note="peak winner")
     print(f"  drawdown: {tr.drawdown(days=30):.2%}  (peak set, no DD yet)")
 
-    _hr("Step 3 — inject a -₹200 loss (20% drawdown vs peak)")
+    _hr("Step 3 - inject a -200 loss (20% drawdown vs peak)")
     _seed_trade(tr, ticker="DROP", entry=100.0, exit_price=98.0, qty=100.0,
                 ts=base + timedelta(hours=1), note="big loser")
     dd = tr.drawdown(days=30)
     print(f"  drawdown: {dd:.2%}  (>= 10% kill switch threshold)")
 
-    _hr("Step 4 — momentum agent tries to enter while kill switch is hot")
+    _hr("Step 4 - momentum agent tries to enter while kill switch is hot")
     outcome = router.submit(_proposal())
     print(f"  outcome: {outcome.state}")
     print(f"  reason : {outcome.reason}")
@@ -96,7 +96,7 @@ def main() -> int:
         print("  [FAIL] kill switch did NOT fire - investigate")
         return 1
 
-    _hr("Step 5 — recovery: massive winner does NOT clear the historical DD")
+    _hr("Step 5 - recovery: massive winner does NOT clear the historical DD")
     _seed_trade(tr, ticker="REBOUND", entry=100.0, exit_price=500.0, qty=10.0,
                 ts=base + timedelta(hours=2), note="huge winner")
     print(f"  drawdown: {tr.drawdown(days=30):.2%}  (event still inside window)")
@@ -107,12 +107,12 @@ def main() -> int:
         return 1
     print("  [OK] kill switch correctly persists - release only by time")
 
-    _hr("All assertions passed — drawdown safety net is wired correctly.")
+    _hr("All assertions passed - drawdown safety net is wired correctly.")
     print()
     print("Note: max-drawdown over the rolling 30d window is the canonical")
     print("kill metric. A 20% DD event halts trading until it ages out of")
     print("the window. To resume sooner, the operator must intervene")
-    print("manually — this is intentional: a 20% DD demands a review pause.")
+    print("manually - this is intentional: a 20% DD demands a review pause.")
     return 0
 
 
