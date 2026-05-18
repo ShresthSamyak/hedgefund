@@ -96,10 +96,27 @@ class AgentToggles(BaseSettings):
 class StrategyParams(BaseSettings):
     """Locked strategy thresholds from the architecture doc."""
 
+    # Sentiment trading. Indian retail overreacts to news -> trade the
+    # sustained-signal phase, exit before mean-reversion eats the gain.
+    # Decay weighting comes from arXiv 2507.09739 (Sharpe 3.64-5.10 with decay).
     sentiment_entry_threshold: float = 0.72
     sentiment_exit_threshold: float = 0.50
-    sentiment_consecutive_windows: int = 3
-    sentiment_max_holding_days: int = 5
+    sentiment_consecutive_windows: int = 3       # 3 prints all >= entry threshold
+    sentiment_max_holding_days: int = 5          # forced close after this
+    sentiment_min_headlines: int = 3             # don't act on single-headline signals
+    sentiment_decay_halflife_hours: float = 24.0 # exp decay; older windows weigh less
+    sentiment_panic_threshold: float = -0.30     # any record <= this -> immediate exit
+    sentiment_atr_stop_mult: float = 1.5         # tighter than momentum (shorter horizon)
+    sentiment_atr_target_mult: float = 3.0       # 1:2 R:R
+    sentiment_atr_period: int = 14
+    sentiment_volume_lookback: int = 20
+    sentiment_volume_ratio_min: float = 1.0
+    sentiment_cooldown_hours: int = 24
+    sentiment_min_history_bars: int = 60         # only need ATR warmup, no 200-EMA
+    sentiment_universe: tuple[str, ...] = (
+        "HDFCBANK", "ICICIBANK", "RELIANCE", "INFY", "TCS",
+        "BAJFINANCE", "LT", "KOTAKBANK",
+    )
 
     # Momentum (Indian equities). EWMA 8/32 satisfies Ed Seykota's slow >= 3x fast
     # rule (4x here). Raw cross win rate ~45-50%; with filters below -> 60-68%
