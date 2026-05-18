@@ -115,9 +115,25 @@ class StrategyParams(BaseSettings):
         ("BAJFINANCE", "BAJAJFINSV"),
     )
 
-    funding_enter_bps: float = 0.01
-    funding_exit_bps: float = 0.005
+    # Funding-arbitrage. Thresholds from the 2019-2023 study summarised in
+    # the project research: static enter 0.01% / exit 0.005% -> ~18% APR, Sharpe 1.4.
+    # Refinements layered on top to harden against single-spike whipsaw,
+    # rate decay, sustained negative funding, and basis blowouts.
+    funding_enter_bps: float = 0.01           # 0.01% per 8h ~= 11% APR
+    funding_exit_bps: float = 0.005           # close when funding decays past here
     funding_universe: tuple[str, ...] = ("BTC/USDT", "ETH/USDT")
+    funding_stability_windows: int = 3        # need 3 consecutive prints above enter_bps
+    funding_decay_floor: float = 0.80         # latest must be >= 80% of recent median
+    funding_negative_close_windows: int = 2   # 2 negative prints in a row -> close
+    funding_basis_close_bps: float = 0.005    # 50bps perp-spot basis -> de-risk
+    funding_cooldown_hours: int = 8           # avoid re-entering same symbol within one cycle
+    funding_max_leverage: float = 2.0         # cap on perp leg (45% liquidation distance)
+    # Tiered sizing — (min funding rate, fraction of risk-manager cap).
+    funding_size_tiers: tuple[tuple[float, float], ...] = (
+        (0.0001,  0.50),  # 0.01% .. 0.02%
+        (0.0002,  0.75),  # 0.02% .. 0.05%
+        (0.0005,  1.00),  # >= 0.05% — max size within risk cap
+    )
 
     trend_speeds: tuple[tuple[int, int], ...] = ((8, 32), (16, 64), (32, 128))
     trend_universe: tuple[str, ...] = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
