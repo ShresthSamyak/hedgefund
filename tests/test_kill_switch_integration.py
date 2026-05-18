@@ -86,24 +86,30 @@ def test_no_false_positive_on_small_drawdown(env) -> None:
     assert outcome.state == "executed", outcome.reason
 
 
-def test_kill_switch_releases_after_equity_recovery(env) -> None:
+def test_kill_switch_persists_after_equity_recovery(env) -> None:
+    """A drawdown event inside the 30d window halts trading EVEN AFTER
+    equity recovers — by design. Max-drawdown over the rolling window is
+    the canonical definition, and a track-record-building system should
+    treat a 20% drawdown as a pause-and-review signal regardless of
+    subsequent recovery. The kill switch only clears when the event ages
+    out of the window (see next test).
+    """
     router, tr = env
     base = datetime.now(timezone.utc) - timedelta(hours=4)
 
     # Build a streak that triggers the kill switch.
-    _inject_winner(tr, ticker="W1", qty=10.0, entry=100.0, exit_price=200.0, ts=base)  # +1000
+    _inject_winner(tr, ticker="W1", qty=10.0, entry=100.0, exit_price=200.0, ts=base)
     _inject_loser(tr, ticker="L1", qty=100.0, entry=100.0, exit_price=98.0,
-                  ts=base + timedelta(hours=1))  # -200 -> dd 20%
+                  ts=base + timedelta(hours=1))  # -200, dd 20%
     rejected = router.submit(_proposal())
     assert rejected.state == "rejected_by_risk"
 
-    # Recovery: a big winner pulls equity back above the prior peak. The
-    # rolling drawdown then drops below the kill-switch cap.
-    _inject_winner(tr, ticker="W2", qty=10.0, entry=100.0, exit_price=120.0,
-                   ts=base + timedelta(hours=2))  # +200, equity now 1000
-
-    outcome = router.submit(_proposal())
-    assert outcome.state == "executed", outcome.reason
+    # Recovery: even a massive winner does not clear the historical drawdown.
+    _inject_winner(tr, ticker="W2", qty=10.0, entry=100.0, exit_price=500.0,
+                   ts=base + timedelta(hours=2))  # +4000
+    still_blocked = router.submit(_proposal())
+    assert still_blocked.state == "rejected_by_risk"
+    assert "kill switch" in still_blocked.reason.lower()
 
 
 def test_kill_switch_fires_at_threshold_boundary(env) -> None:
