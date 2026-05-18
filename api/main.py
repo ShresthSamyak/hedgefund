@@ -109,7 +109,42 @@ class AppState:
 STATE = AppState()
 
 
+def _maybe_attach_redis_bus(state: AppState) -> None:
+    """When deployed as a separate process from `main.py`, the api can
+    still receive live events by subscribing to a shared Redis pub/sub bus.
+    Skips silently if redis is unavailable.
+    """
+    settings = get_settings()
+    url = settings.runtime.redis_url
+    if not url or url.startswith("redis://127.0.0.1") and not _redis_reachable(url):
+        return
+    try:
+        from infra.signal_bus import RedisBus
+        bus = RedisBus(url)
+        state.attach_bus(bus)
+        log.info("api attached to RedisBus %s", url)
+    except Exception:
+        log.warning("redis bus unavailable; live websocket will only fan out "
+                    "events published in this process")
+
+
+def _redis_reachable(url: str) -> bool:
+    try:
+        import redis
+        r = redis.from_url(url, socket_connect_timeout=1)
+        r.ping()
+        return True
+    except Exception:
+        return False
+
+
 app = FastAPI(title="AlphaGrid API", version="0.1.0")
+
+
+@app.on_event("startup")
+def _on_startup() -> None:
+    STATE.loop = asyncio.get_event_loop()
+    _maybe_attach_redis_bus(STATE)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

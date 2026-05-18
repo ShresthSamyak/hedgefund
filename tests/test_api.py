@@ -21,12 +21,16 @@ from record.track_record import (
 def client(tmp_path, monkeypatch):
     """File-backed SQLite under tmp_path. FastAPI runs sync endpoints in a
     threadpool, so `:memory:` is unsafe — each thread gets its own DB.
+    Reset STATE.bus/loop between tests so a test that attaches a bus
+    doesn't leak its subscribers into the next test.
     """
     db_url = f"sqlite:///{tmp_path / 'test.db'}"
     tr = TrackRecord(db_url=db_url)
     rl = ResearchLog(db_url=db_url)
     monkeypatch.setattr(STATE, "track_record", tr)
     monkeypatch.setattr(STATE, "research_log", rl)
+    monkeypatch.setattr(STATE, "bus", None)
+    monkeypatch.setattr(STATE, "loop", None)
     with TestClient(app) as c:
         yield c, tr, rl
 
@@ -76,10 +80,12 @@ def test_portfolio_empty(client) -> None:
 
 def test_portfolio_with_trades(client) -> None:
     c, tr, _ = client
-    _seed(tr, agent="m", ticker="A", entry=100, exit_price=110, hours_ago=2)
-    _seed(tr, agent="m", ticker="B", entry=100, exit_price=95, hours_ago=1)
+    # Big peak winner first so the subsequent small loss stays under the
+    # 10% kill-switch threshold.
+    _seed(tr, agent="m", ticker="A", entry=100, exit_price=200, qty=10, hours_ago=2)
+    _seed(tr, agent="m", ticker="B", entry=100, exit_price=95, qty=1, hours_ago=1)
     body = c.get("/portfolio").json()
-    assert body["pnl_today"] == pytest.approx(5.0)
+    assert body["pnl_today"] == pytest.approx(995.0)
     assert body["trades_closed_24h"] == 2
     assert body["kill_switch_active"] is False
 
