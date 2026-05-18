@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from agents.base import Agent, AgentCadence
@@ -337,5 +336,3 @@ class TradingPairs(Agent):
         return f"{pair[0]}/{pair[1]}"
 
 
-def _flatten(seq: Iterable) -> list:
-    return [x for x in seq]

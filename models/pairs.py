@@ -53,7 +53,7 @@ def engle_granger(
     coeffs, *_ = np.linalg.lstsq(a_matrix, y_arr, rcond=None)
     intercept, beta = float(coeffs[0]), float(coeffs[1])
     residuals = (y_arr - (intercept + beta * x_arr)).tolist()
-    adf_stat, p_value, *_ = adfuller(residuals, autolag="AIC")
+    _adf_stat, p_value, *_ = adfuller(residuals, autolag="AIC")
     return CointegrationFit(
         hedge_ratio=beta,
         intercept=intercept,
