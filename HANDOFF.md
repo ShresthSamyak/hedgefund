@@ -184,6 +184,8 @@ These came directly from the user and are encoded in code, settings, or memory:
 | `python -m tools.weekly_report` | The 6 paper-trading metrics with PASS/FAIL | 0 iff every metric passes |
 | `python -m tools.backtest --days N` | Replay real Binance+yfinance data through every agent | 0 iff report.overall_pass |
 | `python -m tools.backtest --offline` | Same but with synthetic deterministic data | same |
+| `python -m tools.telegram_digest` | Sends the daily snapshot to Telegram (skips if not configured) | 0 always |
+| `python -m tools.telegram_digest --dry-run` | Print the formatted message without sending | 0 always |
 
 Outputs all go to `reports/` (in `.gitignore`).
 
@@ -271,6 +273,20 @@ These are now permanent regression tests — don't reintroduce:
 | Mathematical redundancy: "all ≥ threshold" + "decay-weighted ≥ threshold" | sentiment decay test | Restructured to "latest ≥ threshold" + "decay-weighted ≥ threshold" |
 
 ---
+
+## Doc audit
+
+`DOC_AUDIT.md` is a claim-by-claim walk through the technical reference
+writeup ("AlphaGrid: A Deep Technical Reference Architecture for a
+Multi-Agent Algorithmic Hedge Fund") against the actual code.
+Counts: **12 MATCH**, **15 DIVERGES (defensible, code more conservative)**,
+**8 GAP (aspirational, not built)**. Read it before showing the reference
+doc to anyone external.
+
+The 8 GAP items, prioritised: NSE F&O research agent (Agent 7 in the
+spec) → SOPR + netflow signals → Reddit/X PRAW → ONNX export → ER chop
+filter → India VIX dampener → PnL-correlation block → Kafka audit
+mirror. None block the burn-in.
 
 ## Memory pointers
 
