@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -110,14 +109,7 @@ class AppState:
 STATE = AppState()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    STATE.loop = asyncio.get_running_loop()
-    yield
-    STATE.loop = None
-
-
-app = FastAPI(title="AlphaGrid API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AlphaGrid API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -269,6 +261,9 @@ def equity(days: int = Query(30, ge=1, le=365)) -> dict[str, Any]:
 
 @app.websocket("/live")
 async def live(ws: WebSocket) -> None:
+    # First connection captures the loop so the bus subscriber can fan out.
+    if STATE.loop is None:
+        STATE.loop = asyncio.get_running_loop()
     await STATE.broadcaster.add(ws)
     try:
         # Send an initial hello so the client can confirm.
