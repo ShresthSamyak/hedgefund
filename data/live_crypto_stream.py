@@ -12,9 +12,13 @@ Design notes:
   * Bar timeframe is configurable (default 60s). Match this to the
     cadence the consuming agent needs.
 
+Defaults to Binance SPOT (`stream.binance.com:9443`) since futures is
+region-restricted in many jurisdictions. Pass `futures=True` to use the
+USDT-M futures endpoint when available.
+
 References:
-  * Binance docs — `https://binance-docs.github.io/apidocs/futures/en/#aggregate-trade-streams`
-  * Stream URL — `wss://fstream.binance.com/stream?streams=<sym>@aggTrade/...`
+  * Binance spot WS — `https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams`
+  * Binance futures WS — `https://binance-docs.github.io/apidocs/futures/en/#aggregate-trade-streams`
 """
 from __future__ import annotations
 
