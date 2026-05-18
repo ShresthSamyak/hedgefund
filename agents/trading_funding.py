@@ -132,9 +132,13 @@ class TradingFunding(Agent):
 
         portfolio = self._portfolio_value()
         size_fraction = self._size_fraction_for_rate(latest.value)
+        # The crypto regime gate writes a `crypto_size_modifier` in [-1, +1];
+        # we scale our notional by ±crypto_sent_size_modifier accordingly.
+        regime_mod = self._regime_size_modifier()
+        regime_scale = 1.0 + sp.crypto_sent_size_modifier * regime_mod
         # Use the risk manager's cap as our reference; size_fraction shrinks within it.
         intended_notional = sp.funding_size_tiers[-1][1] * portfolio * self.settings.risk.max_pct_per_trade
-        target_notional = size_fraction * portfolio * self.settings.risk.max_pct_per_trade
+        target_notional = size_fraction * portfolio * self.settings.risk.max_pct_per_trade * regime_scale
         intended_qty = target_notional / mark_price
 
         proposal = TradeProposal(
@@ -245,6 +249,13 @@ class TradingFunding(Agent):
             if rate >= threshold:
                 chosen = frac
         return chosen
+
+    def _regime_size_modifier(self) -> float:
+        """Read latest crypto_size_modifier from research_log. 0.0 if missing."""
+        rec = self.research_log.latest("PORTFOLIO", "crypto_size_modifier")
+        if rec is None:
+            return 0.0
+        return max(-1.0, min(1.0, rec.value))
 
 
 def _mark_price_from(rec: SignalRecord) -> float | None:
