@@ -227,7 +227,7 @@ class TradingMomentum(Agent):
 
     def _inside_trading_window(self) -> bool:
         sp = self.settings.strategy
-        now_ist = datetime.now(timezone.utc).astimezone(IST)
+        now_ist = self._now().astimezone(IST)
         open_t = (9, 15)
         close_t = (15, 25)
         # Account for skip-first-N-minutes of the open.
