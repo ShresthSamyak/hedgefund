@@ -1,27 +1,27 @@
 """AlphaGrid entry point.
 
-Wires APScheduler, registers each enabled agent at its cadence, and holds
-the process open. Paper-mode is on by default (see .env.example).
+Boots the four-speed system:
+  * Tick speed   — Binance WebSocket -> CandleBuilder -> SignalBus
+  * News speed   — Google News RSS poller -> FinBERT -> SignalBus
+  * Bar speed    — APScheduler -> 8 trading + research agents
+  * Macro speed  — research_crypto + regime gate (8h+)
 
-Real implementations live now:
-  * research_india    — every 15 min, accumulates news + sentiment + prices
-  * research_crypto   — every 8h, accumulates funding rates + regime signal
-  * trading_funding   — every 8h, reads research_log and proposes carry trades
-  * trading_momentum  — every 5 min during IST session, EWMA cross on Nifty subset
-  * trading_sentiment — every 15 min, decay-weighted FinBERT signal -> small longs
-
-Other trading agents are stubs until their build-plan slot.
+Paper-mode default. Telegram approval gate enabled when both
+TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set in the environment.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import signal
 import sys
+import threading
 from typing import Iterable
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from agents.base import Agent
+from agents.news_poller import NewsPoller
 from agents.research_crypto import ResearchCrypto
 from agents.research_india import ResearchIndia
 from agents.trading_crypto_sent import TradingCryptoSent
@@ -30,11 +30,13 @@ from agents.trading_momentum import TradingMomentum
 from agents.trading_pairs import TradingPairs
 from agents.trading_sentiment import TradingSentiment
 from agents.trading_trend import TradingTrend
-from comms.approval_gate import NullApprovalGate
+from comms.approval_gate import ApprovalGate, NullApprovalGate
 from config.settings import get_settings
 from data.feeds_crypto import BinanceFeed
-from data.feeds_india import GoogleNewsAndYFinanceFeed
+from data.feeds_india import GoogleNewsAndYFinanceFeed, IndiaFeed
+from data.live_crypto_stream import BinanceWebSocketStream
 from execution.trade_router import TradeRouter
+from infra.signal_bus import InMemoryBus, SignalBus
 from models.finbert_scorer import FinBertScorer, NullScorer, Scorer
 from record.research_log import ResearchLog
 from record.track_record import TrackRecord
@@ -43,10 +45,124 @@ from risk.risk_manager import RiskManager
 log = logging.getLogger("alphagrid")
 
 
+# ---------------------------------------------------------------- infrastructure
+
+class AppContext:
+    """Container for everything an agent needs. Built once in main()."""
+
+    def __init__(self) -> None:
+        self.settings = get_settings()
+        self.bus: SignalBus = InMemoryBus()
+        self.research_log = ResearchLog()
+        self.track_record = TrackRecord()
+        self.risk_manager = RiskManager(self.track_record)
+        self.approval_gate: ApprovalGate = _build_approval_gate(self.settings)
+        self.trade_router = TradeRouter(
+            risk_manager=self.risk_manager,
+            approval_gate=self.approval_gate,
+            track_record=self.track_record,
+        )
+        # Feeds — created lazily based on toggles.
+        self._crypto_feed: BinanceFeed | None = None
+        self._india_feed: IndiaFeed | None = None
+        # Background workers — owned here so shutdown can stop them.
+        self._ws_thread: threading.Thread | None = None
+        self._ws_loop: asyncio.AbstractEventLoop | None = None
+        self._ws_stream: BinanceWebSocketStream | None = None
+        self._news_poller: NewsPoller | None = None
+
+    # ---------- feed accessors
+
+    def crypto_feed(self) -> BinanceFeed:
+        if self._crypto_feed is None:
+            self._crypto_feed = BinanceFeed(testnet=self.settings.binance.testnet)
+        return self._crypto_feed
+
+    def india_feed(self) -> IndiaFeed:
+        if self._india_feed is None:
+            self._india_feed = GoogleNewsAndYFinanceFeed()
+        return self._india_feed
+
+    # ---------- background workers
+
+    def start_live_crypto_stream(self) -> None:
+        toggles = self.settings.agents
+        if not toggles.enable_live_crypto_stream:
+            return
+        stream = BinanceWebSocketStream(
+            symbols=toggles.live_stream_symbols,
+            bus=self.bus,
+            timeframe_seconds=toggles.live_stream_timeframe_seconds,
+            futures=toggles.live_stream_use_futures,
+        )
+        self._ws_stream = stream
+
+        def _run_loop() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._ws_loop = loop
+            try:
+                loop.run_until_complete(stream.start())
+                loop.run_forever()
+            finally:
+                loop.close()
+
+        self._ws_thread = threading.Thread(target=_run_loop, daemon=True, name="live-stream")
+        self._ws_thread.start()
+        log.info(
+            "live crypto stream started: %s, %ss bars, futures=%s",
+            toggles.live_stream_symbols,
+            toggles.live_stream_timeframe_seconds,
+            toggles.live_stream_use_futures,
+        )
+
+    def start_news_poller(self, scorer: Scorer) -> None:
+        toggles = self.settings.agents
+        if not toggles.enable_news_poller:
+            return
+        poller = NewsPoller(
+            feed=self.india_feed(),
+            bus=self.bus,
+            research_log=self.research_log,
+            scorer=scorer,
+            alert_threshold=toggles.news_poller_alert_threshold,
+            poll_seconds=toggles.news_poller_poll_seconds,
+        )
+        poller.start()
+        self._news_poller = poller
+        log.info(
+            "news poller started: %d tickers, every %.0fs, alert>=%.2f",
+            len(poller.tickers), poller.poll_seconds, poller.alert_threshold,
+        )
+
+    def shutdown(self) -> None:
+        if self._news_poller is not None:
+            self._news_poller.stop()
+        if self._ws_stream is not None and self._ws_loop is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(self._ws_stream.stop(), self._ws_loop).result(5.0)
+                self._ws_loop.call_soon_threadsafe(self._ws_loop.stop)
+            except Exception:
+                log.exception("error stopping live stream")
+        self.bus.shutdown()
+
+
+def _build_approval_gate(settings) -> ApprovalGate:
+    """Use Telegram if both token + chat id are set; otherwise auto-approve."""
+    tg = settings.telegram
+    if tg.telegram_bot_token and tg.telegram_chat_id and tg.human_approval_required:
+        try:
+            from comms.telegram_bot import PythonTelegramBotTransport, TelegramApprovalGate
+            transport = PythonTelegramBotTransport(tg.telegram_bot_token, int(tg.telegram_chat_id))
+            log.info("Telegram approval gate enabled")
+            return TelegramApprovalGate(transport)
+        except Exception as exc:
+            log.warning("Telegram gate unavailable (%s); falling back to NullApprovalGate", exc)
+    return NullApprovalGate()
+
+
 def _make_scorer() -> Scorer:
-    """Try FinBERT; fall back to NullScorer if transformers/torch missing.
-    Either way, research_india keeps writing records on its cadence.
-    """
+    """Try FinBERT; fall back to NullScorer if transformers/torch missing."""
     try:
         scorer = FinBertScorer()
         scorer._ensure_loaded()  # noqa: SLF001
@@ -57,88 +173,60 @@ def _make_scorer() -> Scorer:
         return NullScorer()
 
 
-def _enabled_agents() -> Iterable[Agent]:
-    settings = get_settings()
-    toggles = settings.agents
-
-    # Shared infrastructure — single instance reused across agents.
-    research_log = ResearchLog()
-    track_record = TrackRecord()
-    risk_manager = RiskManager(track_record)
-    approval_gate = NullApprovalGate()
-    trade_router = TradeRouter(
-        risk_manager=risk_manager,
-        approval_gate=approval_gate,
-        track_record=track_record,
-    )
+def _enabled_agents(ctx: AppContext, scorer: Scorer) -> Iterable[Agent]:
+    toggles = ctx.settings.agents
 
     if toggles.enable_research_india:
         yield ResearchIndia(
-            feed=GoogleNewsAndYFinanceFeed(),
-            research_log=research_log,
-            scorer=_make_scorer(),
+            feed=ctx.india_feed(),
+            research_log=ctx.research_log,
+            scorer=scorer,
         )
 
-    # Shared feed objects — created once and reused by multiple agents.
-    crypto_feed = BinanceFeed(testnet=settings.binance.testnet) if (
-        toggles.enable_research_crypto
-        or toggles.enable_trading_trend
-    ) else None
-    india_feed = GoogleNewsAndYFinanceFeed() if (
-        toggles.enable_trading_momentum
-        or toggles.enable_trading_sentiment
-        or toggles.enable_trading_pairs
-    ) else None
-
     if toggles.enable_research_crypto:
-        assert crypto_feed is not None
-        yield ResearchCrypto(feed=crypto_feed, research_log=research_log)
+        yield ResearchCrypto(feed=ctx.crypto_feed(), research_log=ctx.research_log)
 
     if toggles.enable_trading_funding:
         yield TradingFunding(
-            research_log=research_log,
-            track_record=track_record,
-            trade_router=trade_router,
+            research_log=ctx.research_log,
+            track_record=ctx.track_record,
+            trade_router=ctx.trade_router,
         )
 
     if toggles.enable_trading_momentum:
-        assert india_feed is not None
         yield TradingMomentum(
-            feed=india_feed,
-            research_log=research_log,
-            track_record=track_record,
-            trade_router=trade_router,
+            feed=ctx.india_feed(),
+            research_log=ctx.research_log,
+            track_record=ctx.track_record,
+            trade_router=ctx.trade_router,
         )
 
     if toggles.enable_trading_sentiment:
-        assert india_feed is not None
         yield TradingSentiment(
-            feed=india_feed,
-            research_log=research_log,
-            track_record=track_record,
-            trade_router=trade_router,
+            feed=ctx.india_feed(),
+            research_log=ctx.research_log,
+            track_record=ctx.track_record,
+            trade_router=ctx.trade_router,
         )
 
     if toggles.enable_trading_pairs:
-        assert india_feed is not None
         yield TradingPairs(
-            feed=india_feed,
-            research_log=research_log,
-            track_record=track_record,
-            trade_router=trade_router,
+            feed=ctx.india_feed(),
+            research_log=ctx.research_log,
+            track_record=ctx.track_record,
+            trade_router=ctx.trade_router,
         )
 
     if toggles.enable_trading_trend:
-        assert crypto_feed is not None
         yield TradingTrend(
-            feed=crypto_feed,
-            research_log=research_log,
-            track_record=track_record,
-            trade_router=trade_router,
+            feed=ctx.crypto_feed(),
+            research_log=ctx.research_log,
+            track_record=ctx.track_record,
+            trade_router=ctx.trade_router,
         )
 
     if toggles.enable_trading_crypto_sent:
-        yield TradingCryptoSent(research_log=research_log)
+        yield TradingCryptoSent(research_log=ctx.research_log)
 
 
 def _safe_run(agent: Agent) -> None:
@@ -150,6 +238,8 @@ def _safe_run(agent: Agent) -> None:
         log.exception("[%s] tick failed", agent.name)
 
 
+# ---------------------------------------------------------------- entrypoint
+
 def main() -> int:
     settings = get_settings()
     logging.basicConfig(
@@ -158,8 +248,16 @@ def main() -> int:
     )
     log.info("alphagrid starting; paper_mode=%s", settings.runtime.paper_mode)
 
+    ctx = AppContext()
+    scorer = _make_scorer()
+
+    # Tick + news speed — daemon threads, run independent of the scheduler.
+    ctx.start_live_crypto_stream()
+    ctx.start_news_poller(scorer)
+
+    # Bar speed — APScheduler.
     scheduler = BlockingScheduler(timezone="UTC")
-    for agent in _enabled_agents():
+    for agent in _enabled_agents(ctx, scorer):
         interval = agent.cadence.every.total_seconds()
         scheduler.add_job(
             _safe_run,
@@ -175,6 +273,7 @@ def main() -> int:
     def _shutdown(_signum, _frame) -> None:
         log.info("shutdown signal received")
         scheduler.shutdown(wait=False)
+        ctx.shutdown()
 
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)

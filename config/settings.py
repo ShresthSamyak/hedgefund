@@ -91,6 +91,14 @@ class AgentToggles(BaseSettings):
     enable_trading_funding: bool = True
     enable_trading_trend: bool = True
     enable_trading_crypto_sent: bool = True
+    # Real-time layer (see infra/signal_bus.py + data/live_crypto_stream.py).
+    enable_live_crypto_stream: bool = True
+    enable_news_poller: bool = True
+    live_stream_timeframe_seconds: int = 60
+    live_stream_symbols: tuple[str, ...] = ("BTC/USDT", "ETH/USDT")
+    live_stream_use_futures: bool = False     # spot is widely accessible; futures = region-restricted
+    news_poller_alert_threshold: float = 0.70
+    news_poller_poll_seconds: float = 30.0
 
 
 class StrategyParams(BaseSettings):
