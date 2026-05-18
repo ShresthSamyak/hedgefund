@@ -20,8 +20,9 @@ from datetime import timedelta
 
 from agents.base import Agent, AgentCadence
 from config.settings import get_settings
-from data.feeds_india import IndiaFeed
+from data.feeds_india import IndiaFeed, NewsItem
 from models.finbert_scorer import NullScorer, Scorer
+from models.llm_client import LLMClient, NullLLM
 from record.research_log import ResearchLog, WriteSignal
 
 log = logging.getLogger(__name__)
