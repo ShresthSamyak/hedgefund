@@ -267,6 +267,12 @@ LLM failures are swallowed — sentiment still records when Vertex is down.
 To turn it on: set `VERTEX_API_KEY` + `VERTEX_ENABLE_LLM_SUMMARIES=true`
 in `.env`, then restart `alphagrid.service`.
 
+**Telegram digest narrative.** `comms/telegram_digest.py::build_narrative`
+calls the `reasoning` tier (Gemini 3.1 Pro) once per daily run to
+produce a 2-3 sentence "what happened, who pulled their weight, what to
+watch" paragraph at the top of the Telegram message. ~$0.001/day. Skip
+via `python -m tools.telegram_digest --no-narrative`.
+
 ---
 
 ## Codebase invariants (enforced by tests — preserve under refactor)
