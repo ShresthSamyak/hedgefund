@@ -107,6 +107,7 @@ class StaticCryptoFeed:
     def __init__(self, points: dict[str, FundingPoint] | None = None) -> None:
         self._points: dict[str, FundingPoint] = points or {}
         self._history: dict[str, list[FundingPoint]] = {}
+        self._ohlc: dict[str, list[DatedCryptoBar]] = {}
 
     def set(self, symbol: str, rate: float, *, mark_price: float | None = None) -> None:
         self._points[symbol] = FundingPoint(
@@ -119,6 +120,9 @@ class StaticCryptoFeed:
     def set_history(self, symbol: str, points: list[FundingPoint]) -> None:
         self._history[symbol] = points
 
+    def set_ohlc(self, symbol: str, bars: list[DatedCryptoBar]) -> None:
+        self._ohlc[symbol] = bars
+
     def fetch_funding_rate(self, symbol: str) -> FundingPoint:
         if symbol not in self._points:
             raise KeyError(f"no funding point set for {symbol}")
@@ -128,3 +132,8 @@ class StaticCryptoFeed:
         self, symbol: str, since_ms: int | None = None, limit: int = 100
     ) -> list[FundingPoint]:
         return list(self._history.get(symbol, []))[:limit]
+
+    def fetch_ohlc(
+        self, symbol: str, *, timeframe: str = "4h", limit: int = 200
+    ) -> list[DatedCryptoBar]:
+        return list(self._ohlc.get(symbol, []))[-limit:]
