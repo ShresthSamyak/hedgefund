@@ -1,0 +1,14 @@
+[Unit]
+Description=AlphaGrid weekly performance report (one-shot, fired by .timer)
+
+[Service]
+Type=oneshot
+User=alphagrid
+Group=alphagrid
+WorkingDirectory=/home/alphagrid/hedgefund
+EnvironmentFile=/home/alphagrid/hedgefund/.env
+ExecStart=/home/alphagrid/hedgefund/venv/bin/python -m tools.weekly_report
+SuccessExitStatus=0 1
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alphagrid-weekly

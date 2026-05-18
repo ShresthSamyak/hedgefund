@@ -1,0 +1,21 @@
+[Unit]
+Description=AlphaGrid scheduler + 8 agents + live crypto stream + news poller
+After=network.target redis.service postgresql.service
+Requires=redis.service postgresql.service
+
+[Service]
+Type=simple
+User=alphagrid
+Group=alphagrid
+WorkingDirectory=/home/alphagrid/hedgefund
+EnvironmentFile=/home/alphagrid/hedgefund/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/alphagrid/hedgefund/venv/bin/python -m main
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alphagrid
+
+[Install]
+WantedBy=multi-user.target

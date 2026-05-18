@@ -1,0 +1,13 @@
+[Unit]
+Description=AlphaGrid daily snapshot (one-shot, fired by .timer)
+
+[Service]
+Type=oneshot
+User=alphagrid
+Group=alphagrid
+WorkingDirectory=/home/alphagrid/hedgefund
+EnvironmentFile=/home/alphagrid/hedgefund/.env
+ExecStart=/home/alphagrid/hedgefund/venv/bin/python -m tools.daily_snapshot
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alphagrid-snapshot

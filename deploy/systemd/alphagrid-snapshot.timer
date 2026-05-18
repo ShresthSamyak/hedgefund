@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AlphaGrid daily snapshot at 06:00 IST (00:30 UTC)
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+Unit=alphagrid-snapshot.service
+
+[Install]
+WantedBy=timers.target

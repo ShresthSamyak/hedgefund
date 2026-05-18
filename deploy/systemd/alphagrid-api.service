@@ -1,0 +1,22 @@
+[Unit]
+Description=AlphaGrid FastAPI dashboard backend
+After=alphagrid.service
+Requires=alphagrid.service
+
+[Service]
+Type=simple
+User=alphagrid
+Group=alphagrid
+WorkingDirectory=/home/alphagrid/hedgefund
+EnvironmentFile=/home/alphagrid/hedgefund/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/alphagrid/hedgefund/venv/bin/uvicorn api.main:app \
+    --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alphagrid-api
+
+[Install]
+WantedBy=multi-user.target
