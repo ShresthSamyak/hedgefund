@@ -70,7 +70,7 @@ def main() -> int:
     )
     base = datetime.now(timezone.utc) - timedelta(hours=3)
 
-    _hr("Step 1 — clean slate")
+    _hr("Step 1 - clean slate")
     print(f"  drawdown: {tr.drawdown(days=30):.2%}  (no trades yet)")
     pre = router.submit(_proposal())
     print(f"  fresh trade -> {pre.state}: {pre.reason}")
