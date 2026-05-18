@@ -61,6 +61,28 @@ class LLM(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
+class VertexAI(BaseSettings):
+    """Google Vertex AI / Agent Platform.
+
+    Two auth paths supported:
+      * api_key  (set VERTEX_API_KEY) — easiest for laptop dev
+      * Application Default Credentials — when api_key is empty and
+        the runtime has gcloud creds, the client switches to ADC.
+
+    Tiers map agent tasks to models. Override per-call via tier=.
+    """
+    api_key: str = ""
+    project: str = ""                                    # GCP project id
+    location: str = "us-central1"
+    fast_model: str = "gemini-3.1-flash-lite-preview"    # routine, high-frequency
+    reasoning_model: str = "gemini-3.1-pro-preview"      # critical decisions, dashboards
+    coding_model: str = "claude-sonnet-4-6"              # code-generation, agent tasks
+    max_output_tokens: int = 512                         # safety cap to avoid runaway bills
+    enable_llm_summaries: bool = False                   # off by default; opt-in
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="VERTEX_", extra="ignore")
+
+
 class Telegram(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
