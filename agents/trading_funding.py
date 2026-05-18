@@ -20,8 +20,8 @@ guides — see the project memory for the full reading list):
     1. Latest funding rate < exit_bps.
     2. Last `funding_negative_close_windows` prints are all negative
        (carry has flipped to a cost — we're paying instead of receiving).
-    3. Perp-spot basis exceeds `funding_basis_close_bps`. Means the
-       delta-neutral hedge is no longer neutral; bail before mark-to-market
+    3. Perp-spot mark drift exceeds `funding_basis_close_pct`. Means the
+       delta-neutral hedge has decoupled; bail before mark-to-market
        drawdown chews the funding income.
 
   Read path:
@@ -181,22 +181,20 @@ class TradingFunding(Agent):
             self._close(symbol, open_pos, latest_rate, reason="funding flipped negative")
             return
 
-        if latest_rate.value < sp.funding_exit_bps:
+        if latest_rate.value < sp.funding_exit_rate:
             self._close(symbol, open_pos, latest_rate, reason=f"funding {latest_rate.value*100:.4f}% < exit")
             return
 
-        # Basis blowout check — only when the research log carried a
-        # spot-vs-perp basis hint in the payload. The current
-        # research_crypto only stores mark_price; the spot leg is implicit,
-        # so basis is computed against the most recent stored mark_price
-        # at entry vs now. We treat any > funding_basis_close_bps gap as a
-        # de-risk trigger.
+        # Basis blowout proxy. We don't have the live spot leg yet, so we
+        # approximate basis risk by tracking the mark price drift between
+        # entry and now. A large drift means the carry's delta-neutrality
+        # is no longer holding — close before mark-to-market eats funding.
         entry_payload = open_pos.signal_payload or {}
         entry_mark = entry_payload.get("entry_mark_price") or open_pos.entry_price
         latest_mark = _mark_price_from(latest_rate)
         if entry_mark and latest_mark and entry_mark > 0:
             basis = abs((latest_mark - entry_mark) / entry_mark)
-            if basis > sp.funding_basis_close_bps * 10:  # generous; basis_close is in fractional terms
+            if basis > sp.funding_basis_close_pct:
                 self._close(
                     symbol,
                     open_pos,
@@ -207,7 +205,7 @@ class TradingFunding(Agent):
 
         log.debug(
             "[%s] holding carry: funding=%.6f exit_th=%.6f",
-            symbol, latest_rate.value, sp.funding_exit_bps,
+            symbol, latest_rate.value, sp.funding_exit_rate,
         )
 
     def _close(self, symbol: str, open_pos, latest_rate: SignalRecord, *, reason: str) -> None:

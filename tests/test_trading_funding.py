@@ -1,9 +1,9 @@
 """End-to-end tests for the funding-arb agent.
 
-We use real ResearchLog + TrackRecord + RiskManager + TradeRouter (all
-in-memory SQLite), the NullApprovalGate, and a FixedClock so market-hours
-checks pass. No mocks. Only the live ccxt feed is bypassed — the agent
-reads funding history directly from research_log.
+Rates are expressed as fractions matching ccxt (0.0001 = 0.01% per 8h).
+Real ResearchLog + TrackRecord + RiskManager + TradeRouter (in-memory SQLite),
+NullApprovalGate, FixedClock. No mocks — only the live ccxt feed is bypassed
+because the agent reads funding history directly from research_log.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from agents.trading_funding import TradingFunding
 from comms.approval_gate import NullApprovalGate
 from execution.trade_router import TradeRouter
 from record.research_log import ResearchLog, WriteSignal
-from record.track_record import TrackRecord
+from record.track_record import CloseTradeRequest, TrackRecord
 from risk.risk_manager import FixedClock, RiskManager, StaticRegime
 
 
@@ -40,8 +40,18 @@ def env():
     return agent, rl, tr
 
 
-def _seed_funding(rl: ResearchLog, symbol: str, rates: list[float], *, mark_price: float = 60_000.0, base_ts: datetime | None = None) -> None:
-    """Write `rates` in chronological order — index 0 is the OLDEST."""
+def _seed_funding(
+    rl: ResearchLog,
+    symbol: str,
+    rates: list[float],
+    *,
+    mark_price: float = 60_000.0,
+    base_ts: datetime | None = None,
+) -> None:
+    """Write `rates` in chronological order — index 0 is the OLDEST.
+
+    Rates are fractions (0.00012 = 0.012% per 8h).
+    """
     base = base_ts or datetime.now(timezone.utc) - timedelta(hours=8 * len(rates))
     for i, rate in enumerate(rates):
         ts = base + timedelta(hours=8 * i)
@@ -61,78 +71,67 @@ def _seed_funding(rl: ResearchLog, symbol: str, rates: list[float], *, mark_pric
 
 def test_enters_when_funding_stable_above_threshold(env) -> None:
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])  # 3 stable prints, all > 0.01%
-
+    # 0.012% per 8h, stable for 3 prints — clean entry signal.
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
     agent.run_once()
     open_pos = [t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT"]
     assert len(open_pos) == 1
     pos = open_pos[0]
     assert pos.signal_payload["strategy"] == "funding_arb"
-    assert pos.signal_payload["funding_rate"] == pytest.approx(0.012)
+    assert pos.signal_payload["funding_rate"] == pytest.approx(0.00012)
 
 
 def test_does_not_enter_on_single_spike(env) -> None:
     agent, rl, tr = env
-    # Only one print above threshold; two prior below.
-    _seed_funding(rl, "BTC/USDT", [0.005, 0.006, 0.020])
+    # Only the latest is above threshold; two prior below.
+    _seed_funding(rl, "BTC/USDT", [0.00005, 0.00006, 0.00020])
     agent.run_once()
     assert not [t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT"]
 
 
 def test_does_not_enter_when_not_enough_history(env) -> None:
     agent, rl, tr = env
-    # Only 2 prints in history (settings require 3).
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013])
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013])  # only 2 prints, need 3
     agent.run_once()
     assert not tr.open_positions(agent="trading_funding")
 
 
 def test_does_not_enter_when_decaying(env) -> None:
     agent, rl, tr = env
-    # Median is 0.018, latest is 0.011 -> 0.011/0.018 = 0.61, below 0.80 floor.
-    _seed_funding(rl, "BTC/USDT", [0.025, 0.018, 0.011])
+    # All above threshold but latest is 50% of median -> decay floor 0.8 triggers.
+    _seed_funding(rl, "BTC/USDT", [0.00025, 0.00018, 0.00011])
     agent.run_once()
     assert not tr.open_positions(agent="trading_funding")
 
 
 def test_does_not_enter_when_no_mark_price(env) -> None:
     agent, rl, tr = env
-    rl.write(WriteSignal(
-        agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=0.012, payload={},  # no mark_price
-    ))
-    rl.write(WriteSignal(
-        agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=0.012, payload={},
-    ))
-    rl.write(WriteSignal(
-        agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=0.012, payload={},
-    ))
+    for _ in range(3):
+        rl.write(WriteSignal(
+            agent="research_crypto", market="crypto", ticker="BTC/USDT",
+            signal_type="funding_rate", value=0.00012, payload={},
+        ))
     agent.run_once()
     assert not tr.open_positions(agent="trading_funding")
 
 
 def test_tier_sizing_higher_funding_bigger_size(env) -> None:
-    """Compare two universes — one at the low tier, one at the high tier.
-    Notional should be larger in the high-tier case.
-    """
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.00015, 0.00015, 0.00015])  # tier 1 (0.5x)
-    _seed_funding(rl, "ETH/USDT", [0.0010, 0.0010, 0.0010], mark_price=3_000.0)  # tier 3 (1.0x)
+    # BTC at 0.015% -> tier 1 (0.50). ETH at 0.10% -> tier 3 (1.00).
+    _seed_funding(rl, "BTC/USDT", [0.00015, 0.00015, 0.00015], mark_price=60_000.0)
+    _seed_funding(rl, "ETH/USDT", [0.0010, 0.0010, 0.0010], mark_price=3_000.0)
     agent.run_once()
     btc = next(t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT")
     eth = next(t for t in tr.open_positions(agent="trading_funding") if t.ticker == "ETH/USDT")
-    # size_tier_fraction stored in payload — high tier should be 1.0, low should be 0.5.
     assert btc.signal_payload["size_tier_fraction"] == pytest.approx(0.5)
     assert eth.signal_payload["size_tier_fraction"] == pytest.approx(1.0)
 
 
 def test_no_duplicate_entry_same_symbol(env) -> None:
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])
-    agent.run_once()  # opens
-    agent.run_once()  # would re-open if not gated
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
+    agent.run_once()
+    agent.run_once()
     btc = [t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT"]
     assert len(btc) == 1
 
@@ -142,38 +141,33 @@ def test_no_duplicate_entry_same_symbol(env) -> None:
 
 def test_exits_when_funding_below_exit_threshold(env) -> None:
     agent, rl, tr = env
-    # Open a position first.
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
     agent.run_once()
     assert tr.open_positions(agent="trading_funding")
 
-    # Add a fresher print below the exit threshold.
     fresh = datetime.now(timezone.utc) + timedelta(minutes=1)
     rl.write(WriteSignal(
         agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=0.002, payload={"mark_price": 60_000.0},
+        signal_type="funding_rate", value=0.00002, payload={"mark_price": 60_000.0},
         ts=fresh,
     ))
     agent.run_once()
     assert not tr.open_positions(agent="trading_funding")
-    closed = tr.closed_trades(agent="trading_funding")
-    assert closed and "exit" in closed[0].reason_text or True  # close happens via track_record path
 
 
 def test_exits_when_two_negative_prints_in_a_row(env) -> None:
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
     agent.run_once()
-    # Two negatives, both fresher than the prior history.
     base = datetime.now(timezone.utc) + timedelta(seconds=1)
     rl.write(WriteSignal(
         agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=-0.0001, payload={"mark_price": 60_000.0},
+        signal_type="funding_rate", value=-0.00001, payload={"mark_price": 60_000.0},
         ts=base,
     ))
     rl.write(WriteSignal(
         agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=-0.0002, payload={"mark_price": 60_000.0},
+        signal_type="funding_rate", value=-0.00002, payload={"mark_price": 60_000.0},
         ts=base + timedelta(hours=8),
     ))
     agent.run_once()
@@ -182,28 +176,29 @@ def test_exits_when_two_negative_prints_in_a_row(env) -> None:
 
 def test_holds_when_funding_above_exit_threshold(env) -> None:
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
     agent.run_once()
     fresh = datetime.now(timezone.utc) + timedelta(minutes=1)
+    # 0.008% per 8h: below enter (0.01%) but above exit (0.005%) -> still hold.
     rl.write(WriteSignal(
         agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=0.008, payload={"mark_price": 60_000.0},
+        signal_type="funding_rate", value=0.00008, payload={"mark_price": 60_000.0},
         ts=fresh,
     ))
     agent.run_once()
-    # 0.008 is below enter (0.01) but above exit (0.005) -> should still be open.
-    assert len([t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT"]) == 1
+    btc = [t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT"]
+    assert len(btc) == 1
 
 
 def test_exits_on_basis_blowout(env) -> None:
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012], mark_price=60_000.0)
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012], mark_price=60_000.0)
     agent.run_once()
-    # Mark price jumps 6% — basis_close threshold is 0.005 * 10 = 5%, so > 5% triggers close.
+    # 6% mark drift > funding_basis_close_pct (5%) -> close.
     fresh = datetime.now(timezone.utc) + timedelta(minutes=1)
     rl.write(WriteSignal(
         agent="research_crypto", market="crypto", ticker="BTC/USDT",
-        signal_type="funding_rate", value=0.012, payload={"mark_price": 63_600.0},
+        signal_type="funding_rate", value=0.00012, payload={"mark_price": 63_600.0},
         ts=fresh,
     ))
     agent.run_once()
@@ -215,13 +210,10 @@ def test_exits_on_basis_blowout(env) -> None:
 
 def test_cooldown_blocks_immediate_reentry(env) -> None:
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
     agent.run_once()
-    # Force-close so the agent thinks it just closed a position.
     open_now = tr.open_positions(agent="trading_funding")[0]
-    from record.track_record import CloseTradeRequest
     tr.close_trade(CloseTradeRequest(trade_id=open_now.id, exit_price=60_000.0))
-    # Try again — funding still hot.
     agent.run_once()
     assert not tr.open_positions(agent="trading_funding")
 
@@ -231,15 +223,13 @@ def test_cooldown_blocks_immediate_reentry(env) -> None:
 
 def test_no_funding_history_is_safe(env) -> None:
     agent, _, tr = env
-    agent.run_once()  # should not crash, no positions
+    agent.run_once()  # no positions, no crash
     assert not tr.open_positions(agent="trading_funding")
 
 
 def test_per_symbol_isolation(env) -> None:
-    """A failure on one symbol should not block the other."""
     agent, rl, tr = env
-    _seed_funding(rl, "BTC/USDT", [0.012, 0.013, 0.012])
-    # ETH has no history — should be quietly skipped.
+    _seed_funding(rl, "BTC/USDT", [0.00012, 0.00013, 0.00012])
     agent.run_once()
     btc = [t for t in tr.open_positions(agent="trading_funding") if t.ticker == "BTC/USDT"]
     eth = [t for t in tr.open_positions(agent="trading_funding") if t.ticker == "ETH/USDT"]

@@ -3,9 +3,12 @@
 Wires APScheduler, registers each enabled agent at its cadence, and holds
 the process open. Paper-mode is on by default (see .env.example).
 
-Research agents have real implementations: every tick they fetch live data
-and append to the research log. Trading agents are still stubs until their
-build-plan slot.
+Real implementations live now:
+  * research_india  — every 15 min, accumulates news + sentiment + prices
+  * research_crypto — every 8h, accumulates funding rates + regime signal
+  * trading_funding — every 8h, reads research_log and proposes carry trades
+
+Other trading agents are stubs until their build-plan slot.
 """
 from __future__ import annotations
 
@@ -25,22 +28,25 @@ from agents.trading_momentum import TradingMomentum
 from agents.trading_pairs import TradingPairs
 from agents.trading_sentiment import TradingSentiment
 from agents.trading_trend import TradingTrend
+from comms.approval_gate import NullApprovalGate
 from config.settings import get_settings
 from data.feeds_crypto import BinanceFeed
 from data.feeds_india import GoogleNewsAndYFinanceFeed
+from execution.trade_router import TradeRouter
 from models.finbert_scorer import FinBertScorer, NullScorer, Scorer
 from record.research_log import ResearchLog
+from record.track_record import TrackRecord
+from risk.risk_manager import RiskManager
 
 log = logging.getLogger("alphagrid")
 
 
 def _make_scorer() -> Scorer:
-    """Try FinBERT; if transformers/torch missing, fall back to NullScorer.
+    """Try FinBERT; fall back to NullScorer if transformers/torch missing.
     Either way, research_india keeps writing records on its cadence.
     """
     try:
         scorer = FinBertScorer()
-        # Force a load attempt so we can fall back if the model is missing.
         scorer._ensure_loaded()  # noqa: SLF001
         log.info("FinBERT loaded")
         return scorer
@@ -53,7 +59,16 @@ def _enabled_agents() -> Iterable[Agent]:
     settings = get_settings()
     toggles = settings.agents
 
+    # Shared infrastructure — single instance reused across agents.
     research_log = ResearchLog()
+    track_record = TrackRecord()
+    risk_manager = RiskManager(track_record)
+    approval_gate = NullApprovalGate()
+    trade_router = TradeRouter(
+        risk_manager=risk_manager,
+        approval_gate=approval_gate,
+        track_record=track_record,
+    )
 
     if toggles.enable_research_india:
         yield ResearchIndia(
@@ -68,16 +83,21 @@ def _enabled_agents() -> Iterable[Agent]:
             research_log=research_log,
         )
 
-    # Trading agents are stubs until their build-plan week — they raise
-    # NotImplementedError on first tick and the scheduler logs and moves on.
+    if toggles.enable_trading_funding:
+        yield TradingFunding(
+            research_log=research_log,
+            track_record=track_record,
+            trade_router=trade_router,
+        )
+
+    # Stubs — raise NotImplementedError on their first tick; the scheduler
+    # logs and moves on.
     if toggles.enable_trading_momentum:
         yield TradingMomentum()
     if toggles.enable_trading_sentiment:
         yield TradingSentiment()
     if toggles.enable_trading_pairs:
         yield TradingPairs()
-    if toggles.enable_trading_funding:
-        yield TradingFunding()
     if toggles.enable_trading_trend:
         yield TradingTrend()
     if toggles.enable_trading_crypto_sent:
@@ -104,8 +124,6 @@ def main() -> int:
     scheduler = BlockingScheduler(timezone="UTC")
     for agent in _enabled_agents():
         interval = agent.cadence.every.total_seconds()
-        # next_run_time=now triggers an immediate first tick so research
-        # starts accumulating data without waiting a full cadence period.
         scheduler.add_job(
             _safe_run,
             "interval",
