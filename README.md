@@ -133,6 +133,19 @@ through TradeRouter, FinBERT score, Google News RSS, news poller end-to-end,
 and a live Binance WebSocket bar. Exit code 0 iff every essential check
 passes.
 
+## Operator tools
+
+```powershell
+# See the kill switch fire end-to-end before trusting it with real money.
+python -m tools.kill_switch_demo
+
+# Cron this once per day during the burn-in. Appends a one-line JSON snapshot
+# of every agent's last-24h activity to reports/snapshots.jsonl, and writes
+# a human-readable reports/YYYY-MM-DD.txt summary.
+python -m tools.daily_snapshot
+python -m tools.daily_snapshot --window-hours 168    # weekly view
+```
+
 ## Next milestone
 
 Week 10 — full paper-trading burn-in (all 8 agents + real-time layer +
