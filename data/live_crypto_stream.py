@@ -35,6 +35,7 @@ from models.candle_builder import CandleBuilder, ClosedBar
 
 log = logging.getLogger(__name__)
 
+SPOT_WS_BASE = "wss://stream.binance.com:9443/stream"
 FUTURES_WS_BASE = "wss://fstream.binance.com/stream"
 
 
@@ -45,12 +46,14 @@ class BinanceWebSocketStream:
         symbols: Iterable[str],
         bus: SignalBus,
         timeframe_seconds: int = 60,
+        futures: bool = False,
     ) -> None:
         self.symbols = tuple(symbols)
         if not self.symbols:
             raise ValueError("symbols must not be empty")
         self.bus = bus
         self.timeframe_seconds = timeframe_seconds
+        self.futures = futures
         self._builders: dict[str, CandleBuilder] = {
             s: CandleBuilder(timeframe_seconds=timeframe_seconds) for s in self.symbols
         }
@@ -100,7 +103,7 @@ class BinanceWebSocketStream:
         except ImportError as exc:
             raise RuntimeError("websockets package required for live stream") from exc
 
-        url = self._build_url(self.symbols)
+        url = self._build_url(self.symbols, futures=self.futures)
         log.info("binance ws connecting %s", url)
         async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
             async for raw in ws:
@@ -153,10 +156,11 @@ class BinanceWebSocketStream:
     # ------------------------------------------------------------------ url helper
 
     @staticmethod
-    def _build_url(symbols: tuple[str, ...]) -> str:
+    def _build_url(symbols: tuple[str, ...], *, futures: bool = False) -> str:
         # Binance expects lowercase symbols without the `/` separator.
         streams = "/".join(_to_stream(s) for s in symbols)
-        return f"{FUTURES_WS_BASE}?streams={streams}"
+        base = FUTURES_WS_BASE if futures else SPOT_WS_BASE
+        return f"{base}?streams={streams}"
 
 
 def _to_stream(symbol: str) -> str:

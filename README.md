@@ -83,7 +83,42 @@ All locked. Override via `.env` only if you know why.
 | Indian intraday window | 09:15 – 15:25 IST |
 | Crypto regime override | `risk_off` blocks directional crypto agents; funding arb still allowed |
 
+## Real-time layer (week 9)
+
+Three speeds run in parallel — see `agents/news_poller.py`,
+`data/live_crypto_stream.py`, and `infra/signal_bus.py`:
+
+| Speed | What | Channel | Latency |
+|---|---|---|---|
+| Tick  | Binance WebSocket `aggTrade` -> `CandleBuilder` -> bus | `price.<symbol>` | ~ms |
+| News  | RSS poller -> FinBERT -> bus on `|score| ≥ 0.7` | `news.alert`, `news.raw` | 2–32s |
+| Bar   | Scheduled agents on APScheduler (5m / 15m / 30m / 1h / 4h / 8h) | direct calls | matches cadence |
+| Macro | research_crypto on-chain / regime gate | `research.regime` | 4–8h |
+
+The bus has two implementations — `InMemoryBus` for paper mode and tests
+(default), `RedisBus` for multi-process production. Channels are the same.
+
+## Dashboard
+
+```powershell
+streamlit run dashboard/app.py
+```
+
+Two views: **Live** (open positions, risk status, latest signals, regime)
+and **Track record** (cumulative P&L, per-agent stats, full trade table).
+Reads directly from the SQLite DB — no scheduler dependency.
+
+## Tests
+
+```powershell
+python -m pytest tests/ -v
+```
+
+148 tests covering the trade log, risk manager, all 8 agents, the indicator
+math, pairs cointegration / OU half-life, news poller, candle builder,
+signal bus, and the live Binance WebSocket tick handler.
+
 ## Next milestone
 
-Week 2 — finish `monthly_pdf_report` in `track_record.py` and wire the Telegram
-approval gate so paper-mode signals flow to your phone.
+Week 10 — full paper-trading burn-in (all 8 agents + real-time layer +
+dashboard running for 7 days) before flipping live-mode for week 11.

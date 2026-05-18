@@ -45,6 +45,17 @@ def test_build_url_combines_streams() -> None:
     assert "ethusdt@aggTrade" in url
 
 
+def test_build_url_defaults_to_spot() -> None:
+    url = BinanceWebSocketStream._build_url(("BTC/USDT",))
+    assert "stream.binance.com" in url
+    assert "fstream" not in url
+
+
+def test_build_url_futures_when_requested() -> None:
+    url = BinanceWebSocketStream._build_url(("BTC/USDT",), futures=True)
+    assert "fstream.binance.com" in url
+
+
 def test_tick_handler_publishes_closed_bar_at_boundary() -> None:
     bus = InMemoryBus()
     try:
