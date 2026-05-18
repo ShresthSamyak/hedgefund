@@ -79,11 +79,20 @@ def _enabled_agents() -> Iterable[Agent]:
             scorer=_make_scorer(),
         )
 
+    # Shared feed objects — created once and reused by multiple agents.
+    crypto_feed = BinanceFeed(testnet=settings.binance.testnet) if (
+        toggles.enable_research_crypto
+        or toggles.enable_trading_trend
+    ) else None
+    india_feed = GoogleNewsAndYFinanceFeed() if (
+        toggles.enable_trading_momentum
+        or toggles.enable_trading_sentiment
+        or toggles.enable_trading_pairs
+    ) else None
+
     if toggles.enable_research_crypto:
-        yield ResearchCrypto(
-            feed=BinanceFeed(testnet=settings.binance.testnet),
-            research_log=research_log,
-        )
+        assert crypto_feed is not None
+        yield ResearchCrypto(feed=crypto_feed, research_log=research_log)
 
     if toggles.enable_trading_funding:
         yield TradingFunding(
@@ -91,11 +100,6 @@ def _enabled_agents() -> Iterable[Agent]:
             track_record=track_record,
             trade_router=trade_router,
         )
-
-    # Indian-equities agents share the same feed object.
-    india_feed = GoogleNewsAndYFinanceFeed() if (
-        toggles.enable_trading_momentum or toggles.enable_trading_sentiment
-    ) else None
 
     if toggles.enable_trading_momentum:
         assert india_feed is not None
@@ -115,14 +119,26 @@ def _enabled_agents() -> Iterable[Agent]:
             trade_router=trade_router,
         )
 
-    # Stubs — raise NotImplementedError on their first tick; the scheduler
-    # logs and moves on.
     if toggles.enable_trading_pairs:
-        yield TradingPairs()
+        assert india_feed is not None
+        yield TradingPairs(
+            feed=india_feed,
+            research_log=research_log,
+            track_record=track_record,
+            trade_router=trade_router,
+        )
+
     if toggles.enable_trading_trend:
-        yield TradingTrend()
+        assert crypto_feed is not None
+        yield TradingTrend(
+            feed=crypto_feed,
+            research_log=research_log,
+            track_record=track_record,
+            trade_router=trade_router,
+        )
+
     if toggles.enable_trading_crypto_sent:
-        yield TradingCryptoSent()
+        yield TradingCryptoSent(research_log=research_log)
 
 
 def _safe_run(agent: Agent) -> None:
