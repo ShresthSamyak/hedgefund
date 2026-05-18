@@ -101,9 +101,27 @@ class StrategyParams(BaseSettings):
     sentiment_consecutive_windows: int = 3
     sentiment_max_holding_days: int = 5
 
+    # Momentum (Indian equities). EWMA 8/32 satisfies Ed Seykota's slow >= 3x fast
+    # rule (4x here). Raw cross win rate ~45-50%; with filters below -> 60-68%
+    # on Indian-market backtests.
     momentum_fast_ewma: int = 8
     momentum_slow_ewma: int = 32
     momentum_swing_confirm_days: int = 2
+    momentum_trend_ema: int = 200             # higher-timeframe trend gate
+    momentum_adx_period: int = 14
+    momentum_adx_threshold: float = 20.0      # below this = chop, skip
+    momentum_atr_period: int = 14
+    momentum_atr_stop_mult: float = 2.0       # 2x ATR stop (swing)
+    momentum_atr_target_mult: float = 4.0     # 4x ATR target -> 1:2 R:R
+    momentum_min_history_bars: int = 60       # need enough bars for ADX and 200-EMA warmup
+    momentum_volume_ratio_min: float = 1.0    # cross bar volume >= rolling median
+    momentum_volume_lookback: int = 20
+    momentum_skip_first_minutes: int = 15     # avoid the open-bell whipsaw
+    momentum_require_nonnegative_sentiment: bool = True  # block long if news scores < 0
+    momentum_universe: tuple[str, ...] = (
+        "HDFCBANK", "ICICIBANK", "RELIANCE", "INFY", "TCS",
+        "BAJFINANCE", "LT", "KOTAKBANK",
+    )
 
     pairs_zscore_entry: float = 2.0
     pairs_zscore_exit: float = 0.0
