@@ -163,7 +163,7 @@ def write_snapshot(snapshot: Snapshot, reports_dir: Path) -> tuple[Path, Path]:
 
 def _render_text(snap: Snapshot) -> str:
     lines: list[str] = []
-    lines.append(f"AlphaGrid daily snapshot — {snap.snapshot_ts}")
+    lines.append(f"AlphaGrid daily snapshot - {snap.snapshot_ts}")
     lines.append(f"window: last {snap.window_hours}h    paper_mode: {snap.paper_mode}")
     lines.append("-" * 68)
     lines.append(
@@ -173,7 +173,7 @@ def _render_text(snap: Snapshot) -> str:
         f"dd(30d): {snap.drawdown_30d:>6.2%}"
     )
     if snap.kill_switch_active:
-        lines.append("  KILL SWITCH ACTIVE — new trades blocked until DD ages out of window")
+        lines.append("  KILL SWITCH ACTIVE - new trades blocked until DD ages out of window")
     lines.append("-" * 68)
     lines.append(
         f"  {'agent':<24} {'opened':>6} {'closed':>6} {'wins':>5} {'loss':>5} "
