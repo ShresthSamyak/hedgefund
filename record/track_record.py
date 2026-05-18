@@ -254,8 +254,29 @@ class TrackRecord:
         return abs(worst)
 
     def monthly_pdf_report(self, year: int, month: int, out_path: str) -> str:
-        """Stub — week 2 will implement via reportlab. Returns the path for the caller."""
-        raise NotImplementedError("monthly_pdf_report scheduled for week 2 delivery")
+        """Render a one-page monthly summary PDF. Idempotent — overwrites out_path.
+
+        Sections:
+          * portfolio summary (total P&L, running Sharpe, max drawdown)
+          * per-agent breakdown (trades, win rate, P&L)
+        """
+        from calendar import monthrange
+
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        end_day = monthrange(year, month)[1]
+        end = datetime(year, month, end_day, 23, 59, 59, tzinfo=timezone.utc)
+        with self._Session() as session:
+            stmt = (
+                select(Trade)
+                .where(Trade.exit_ts.is_not(None))
+                .where(Trade.exit_ts >= start)
+                .where(Trade.exit_ts <= end)
+                .order_by(Trade.exit_ts)
+            )
+            trades = list(session.scalars(stmt))
+
+        _render_monthly_pdf(year, month, trades, out_path)
+        return out_path
 
 
 # ---------------------------------------------------------------------- helpers
@@ -291,6 +312,77 @@ def _daily_returns(trades: list[Trade]) -> list[float]:
         day = t.exit_ts.date().isoformat()
         by_day[day] = by_day.get(day, 0.0) + (t.pnl / t.portfolio_value_at_entry)
     return list(by_day.values())
+
+
+def _render_monthly_pdf(year: int, month: int, trades: list[Trade], out_path: str) -> None:
+    """Reportlab is a lazy import — the rest of the module works without it."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Table,
+            TableStyle,
+        )
+        from reportlab.lib import colors
+    except ImportError as exc:
+        raise TrackRecordError(
+            "reportlab is required for monthly_pdf_report; pip install reportlab"
+        ) from exc
+
+    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(out_path, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm)
+
+    total_pnl = sum((t.pnl or 0.0) for t in trades)
+    win_count = sum(1 for t in trades if (t.pnl or 0.0) > 0)
+    loss_count = sum(1 for t in trades if (t.pnl or 0.0) < 0)
+    win_rate = (win_count / (win_count + loss_count)) if (win_count + loss_count) else 0.0
+
+    equity = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    for t in sorted(trades, key=lambda x: x.exit_ts or datetime.min.replace(tzinfo=timezone.utc)):
+        equity += t.pnl or 0.0
+        peak = max(peak, equity)
+        if peak > 0:
+            max_dd = min(max_dd, (equity - peak) / peak)
+
+    by_agent: dict[str, list[Trade]] = {}
+    for t in trades:
+        by_agent.setdefault(t.agent, []).append(t)
+
+    story = []
+    story.append(Paragraph(f"<b>AlphaGrid — {year}-{month:02d}</b>", styles["Title"]))
+    story.append(Spacer(1, 0.5 * cm))
+    story.append(Paragraph(f"Trades closed: {len(trades)}", styles["Normal"]))
+    story.append(Paragraph(f"Total P&amp;L: {total_pnl:,.2f}", styles["Normal"]))
+    story.append(Paragraph(f"Win rate: {win_rate:.2%}", styles["Normal"]))
+    story.append(Paragraph(f"Max drawdown (intra-month): {abs(max_dd):.2%}", styles["Normal"]))
+    story.append(Spacer(1, 0.5 * cm))
+
+    table_data = [["Agent", "Trades", "Wins", "Losses", "Win rate", "P&L"]]
+    for agent, ts in sorted(by_agent.items()):
+        wins = sum(1 for t in ts if (t.pnl or 0.0) > 0)
+        losses = sum(1 for t in ts if (t.pnl or 0.0) < 0)
+        wr = (wins / (wins + losses)) if (wins + losses) else 0.0
+        pnl = sum((t.pnl or 0.0) for t in ts)
+        table_data.append([agent, str(len(ts)), str(wins), str(losses), f"{wr:.0%}", f"{pnl:,.2f}"])
+
+    table = Table(table_data, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+    ]))
+    story.append(table)
+    doc.build(story)
 
 
 _GUARD_INSTALLED = False
