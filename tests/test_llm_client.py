@@ -15,7 +15,6 @@ from models.llm_client import (
 )
 from record.research_log import ResearchLog
 
-
 # ----------------------------------------------------------------- NullLLM
 
 
