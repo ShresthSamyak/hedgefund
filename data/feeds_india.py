@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from typing import Protocol
 from urllib.parse import quote_plus
 
+from models.indicators import OHLCBar
+
 
 log = logging.getLogger(__name__)
 
@@ -36,9 +38,19 @@ class PricePoint:
     volume: float | None = None
 
 
+@dataclass(frozen=True)
+class DatedBar:
+    """OHLC bar with a timestamp. The indicator code uses plain OHLCBar;
+    this wrapper preserves the bar timestamp for the agent's bookkeeping.
+    """
+    ts: datetime
+    bar: OHLCBar
+
+
 class IndiaFeed(Protocol):
     def fetch_news(self, ticker: str, *, limit: int = 20) -> list[NewsItem]: ...
     def fetch_latest_close(self, ticker: str) -> PricePoint | None: ...
+    def fetch_ohlc(self, ticker: str, *, days: int = 60) -> list[DatedBar]: ...
 
 
 class GoogleNewsAndYFinanceFeed:
@@ -71,7 +83,6 @@ class GoogleNewsAndYFinanceFeed:
             import yfinance as yf
         except ImportError as exc:
             raise RuntimeError("yfinance is required for price fetch") from exc
-        # NSE tickers need the .NS suffix on yfinance.
         sym = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
         hist = yf.Ticker(sym).history(period="2d", interval="1d", auto_adjust=False)
         if hist.empty:
@@ -83,6 +94,32 @@ class GoogleNewsAndYFinanceFeed:
             close=float(last["Close"]),
             volume=float(last["Volume"]) if "Volume" in last.index else None,
         )
+
+    def fetch_ohlc(self, ticker: str, *, days: int = 60) -> list[DatedBar]:
+        try:
+            import yfinance as yf
+        except ImportError as exc:
+            raise RuntimeError("yfinance is required for OHLC fetch") from exc
+        sym = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+        # Pad the period slightly so we always have `days` usable bars after
+        # weekend/holiday gaps.
+        hist = yf.Ticker(sym).history(period=f"{int(days * 1.5)}d", interval="1d", auto_adjust=False)
+        if hist.empty:
+            return []
+        out: list[DatedBar] = []
+        for ts_idx, row in hist.iterrows():
+            ts = ts_idx.to_pydatetime().astimezone(timezone.utc)
+            out.append(DatedBar(
+                ts=ts,
+                bar=OHLCBar(
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=float(row.get("Volume", 0.0)),
+                ),
+            ))
+        return out[-days:]
 
 
 class StaticIndiaFeed:
