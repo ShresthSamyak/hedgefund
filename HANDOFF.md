@@ -186,6 +186,8 @@ These came directly from the user and are encoded in code, settings, or memory:
 | `python -m tools.backtest --offline` | Same but with synthetic deterministic data | same |
 | `python -m tools.telegram_digest` | Sends the daily snapshot to Telegram (skips if not configured) | 0 always |
 | `python -m tools.telegram_digest --dry-run` | Print the formatted message without sending | 0 always |
+| `python -m tools.dry_run` | Simulates 7d of paper trading to an isolated DB; prints exact commands to point the dashboard at it | 0 always |
+| `python -m tools.dry_run --live --with-llm` | Pull real data, run the LLM rationale chain end-to-end (~$0.05 cost) | 0 always |
 
 Outputs all go to `reports/` (in `.gitignore`).
 
