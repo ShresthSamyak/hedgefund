@@ -114,9 +114,24 @@ Reads directly from the SQLite DB — no scheduler dependency.
 python -m pytest tests/ -v
 ```
 
-148 tests covering the trade log, risk manager, all 8 agents, the indicator
+160 tests covering the trade log, risk manager, all 8 agents, the indicator
 math, pairs cointegration / OU half-life, news poller, candle builder,
-signal bus, and the live Binance WebSocket tick handler.
+signal bus, the live Binance WebSocket tick handler, and the pre-burn-in
+health check.
+
+## Pre-burn-in health check
+
+Run this once before committing to a multi-day continuous run:
+
+```powershell
+python -m tools.healthcheck            # full check (~30s, real network)
+python -m tools.healthcheck --offline  # essentials only, no network
+```
+
+Verifies settings load, SQLite roundtrip, risk-manager rules, paper trade
+through TradeRouter, FinBERT score, Google News RSS, news poller end-to-end,
+and a live Binance WebSocket bar. Exit code 0 iff every essential check
+passes.
 
 ## Next milestone
 
