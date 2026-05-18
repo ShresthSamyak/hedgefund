@@ -112,14 +112,18 @@ def _load_yfinance_history(tickers: list[str], days: int) -> dict[str, list[Date
         if hist.empty:
             out[t] = []
             continue
+        import math
         bars: list[DatedBar] = []
         for ts_idx, row in hist.iterrows():
+            close = row["Close"]
+            if close is None or (isinstance(close, float) and math.isnan(close)):
+                continue   # yfinance occasionally emits a NaN row near market open
             ts = ts_idx.to_pydatetime().astimezone(timezone.utc)
             bars.append(DatedBar(
                 ts=ts,
                 bar=OHLCBar(
                     open=float(row["Open"]), high=float(row["High"]),
-                    low=float(row["Low"]),  close=float(row["Close"]),
+                    low=float(row["Low"]),  close=float(close),
                     volume=float(row.get("Volume", 0.0)),
                 ),
             ))

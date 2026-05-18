@@ -87,6 +87,7 @@ class ResearchLog:
     def write(self, signal: WriteSignal) -> str:
         if not signal.agent or not signal.signal_type or not signal.ticker:
             raise ResearchLogError("agent, ticker, signal_type are required")
+        _ensure_finite(signal.value, where="value")
         _ensure_json_safe(signal.payload)
         sid = str(uuid.uuid4())
         with self._Session.begin() as session:
