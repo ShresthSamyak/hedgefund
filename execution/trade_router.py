@@ -5,22 +5,30 @@ Flow:
       └─> TradeRouter.submit(proposal)
             ├─> RiskManager.review(proposal)        # rules + sizing
             ├─> ApprovalGate.request(...)           # optional human gate
+            ├─> LLM rationale  (optional, reasoning tier)
             └─> TrackRecord.open_trade(...)         # append-only log
 
 We do NOT place orders here yet. Broker wiring lands in week 5 when the
 funding-arb agent ships. Until then, this is paper-mode: a successful
 submission produces an open row in the trade log and returns an OUTCOME the
 caller can act on.
+
+When an `LLMClient` is provided AND the `enable_llm_summaries` toggle is
+on, every APPROVED trade gets a one-sentence rationale attached to its
+signal_payload under `llm_reason`. The dashboard surfaces it next to the
+rule-based `reason_text`. Rejections do not call the LLM (would be too
+chatty + expensive).
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from comms.approval_gate import ApprovalGate
 from config.settings import get_settings
+from models.llm_client import LLMClient, NullLLM
 from record.track_record import OpenTradeRequest, TrackRecord
 from risk.risk_manager import Decision, RiskManager, TradeProposal
 
@@ -54,11 +62,14 @@ class TradeRouter:
         track_record: TrackRecord,
         require_human_approval: bool | None = None,
         approval_timeout: timedelta | None = None,
+        llm: LLMClient | None = None,
     ) -> None:
         self.risk = risk_manager
         self.gate = approval_gate
         self.track_record = track_record
+        self.llm: LLMClient = llm or NullLLM()
         settings = get_settings()
+        self.settings = settings
         self.require_human_approval = (
             require_human_approval
             if require_human_approval is not None
@@ -101,6 +112,14 @@ class TradeRouter:
                     rule_trail=decision.rule_trail,
                 )
 
+        # Optional LLM rationale. Built on a copy of the agent's payload so
+        # the agent's original dict stays untouched.
+        signal_payload: dict[str, Any] = dict(proposal.signal_payload)
+        if self._llm_enabled():
+            rationale = self._build_rationale(proposal, decision)
+            if rationale:
+                signal_payload["llm_reason"] = rationale
+
         trade_id = self.track_record.open_trade(
             OpenTradeRequest(
                 agent=proposal.agent,
@@ -111,7 +130,7 @@ class TradeRouter:
                 entry_price=proposal.reference_price,
                 portfolio_value_at_entry=proposal.portfolio_value,
                 reason_text=proposal.reason_text,
-                signal_payload=proposal.signal_payload,
+                signal_payload=signal_payload,
                 paper=self.paper,
             )
         )
@@ -126,3 +145,33 @@ class TradeRouter:
             trade_id=trade_id,
             rule_trail=decision.rule_trail,
         )
+
+    # ------------------------------------------------------------------ llm
+
+    def _llm_enabled(self) -> bool:
+        return (
+            self.settings.vertex.enable_llm_summaries
+            and not isinstance(self.llm, NullLLM)
+        )
+
+    def _build_rationale(self, proposal: TradeProposal, decision: Decision) -> str | None:
+        notional = decision.sized_qty * proposal.reference_price
+        pct = (notional / proposal.portfolio_value * 100.0) if proposal.portfolio_value > 0 else 0.0
+        prompt = (
+            "You are a quant strategy reviewer. In ONE sentence (max 40 words), "
+            "state the most important reason this trade is being placed. Be specific "
+            "about the numbers and the agent's logic. No fluff, no preamble, no questions.\n\n"
+            f"Agent: {proposal.agent}\n"
+            f"Action: {proposal.side} {proposal.ticker} ({proposal.market}, {proposal.horizon})\n"
+            f"Size: {decision.sized_qty:g} @ {proposal.reference_price:g} "
+            f"= {notional:,.2f} ({pct:.2f}% of portfolio)\n"
+            f"Agent reasoning: {proposal.reason_text}\n"
+            f"Signal payload: {proposal.signal_payload}\n"
+        )
+        try:
+            resp = self.llm.complete(prompt, tier="reasoning")
+            text = (resp.text or "").strip()
+        except Exception:
+            log.exception("trade rationale LLM call failed for agent=%s", proposal.agent)
+            return None
+        return text or None

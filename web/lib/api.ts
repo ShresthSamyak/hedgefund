@@ -41,6 +41,7 @@ export type TradeRow = {
   exit_price: number | null;
   pnl: number | null;
   reason_text: string;
+  llm_reason: string | null;
   paper: boolean;
   open: boolean;
 };

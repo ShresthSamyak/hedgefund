@@ -58,10 +58,14 @@ class AppContext:
         self.track_record = TrackRecord()
         self.risk_manager = RiskManager(self.track_record)
         self.approval_gate: ApprovalGate = _build_approval_gate(self.settings)
+        # One LLM client shared by every consumer (router, research_india,
+        # telegram_digest) so cost tracking aggregates in one place.
+        self.llm: LLMClient = build_llm_client()
         self.trade_router = TradeRouter(
             risk_manager=self.risk_manager,
             approval_gate=self.approval_gate,
             track_record=self.track_record,
+            llm=self.llm,
         )
         # Feeds — created lazily based on toggles.
         self._crypto_feed: BinanceFeed | None = None
@@ -253,15 +257,14 @@ def main() -> int:
 
     ctx = AppContext()
     scorer = _make_scorer()
-    llm = build_llm_client()
 
     # Tick + news speed — daemon threads, run independent of the scheduler.
     ctx.start_live_crypto_stream()
     ctx.start_news_poller(scorer)
 
-    # Bar speed — APScheduler.
+    # Bar speed — APScheduler. Agents share AppContext.llm.
     scheduler = BlockingScheduler(timezone="UTC")
-    for agent in _enabled_agents(ctx, scorer, llm):
+    for agent in _enabled_agents(ctx, scorer, ctx.llm):
         interval = agent.cadence.every.total_seconds()
         scheduler.add_job(
             _safe_run,

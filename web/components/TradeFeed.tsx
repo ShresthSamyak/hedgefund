@@ -49,7 +49,17 @@ export function TradeFeed({ trades }: { trades: TradeRow[] }) {
                   <td className={`px-4 py-2 text-right num ${isOpen ? "text-muted" : pnlCls}`}>
                     {isOpen ? "-" : (pnl > 0 ? `+${pnl.toFixed(2)}` : pnl.toFixed(2))}
                   </td>
-                  <td className="px-4 py-2 text-muted truncate max-w-[18rem]">{t.reason_text}</td>
+                  <td className="px-4 py-2 max-w-[22rem]">
+                    <div className="text-muted truncate" title={t.reason_text}>{t.reason_text}</div>
+                    {t.llm_reason ? (
+                      <div
+                        className="text-accent/80 italic mt-0.5 truncate text-[10px]"
+                        title={t.llm_reason}
+                      >
+                        ✶ {t.llm_reason}
+                      </div>
+                    ) : null}
+                  </td>
                 </tr>
               );
             })}

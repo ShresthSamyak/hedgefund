@@ -273,6 +273,15 @@ produce a 2-3 sentence "what happened, who pulled their weight, what to
 watch" paragraph at the top of the Telegram message. ~$0.001/day. Skip
 via `python -m tools.telegram_digest --no-narrative`.
 
+**Per-trade rationale.** `execution/trade_router.py::_build_rationale`
+calls the `reasoning` tier for every APPROVED trade just before logging.
+The one-sentence rationale lands in `signal_payload['llm_reason']`,
+flows through the API's `/trades` endpoint, and renders as a subtle
+italic line below the rule-based reason in the dashboard's TradeFeed.
+Rejections do NOT call the LLM (kept cheap and quiet). Gated by the
+same `VERTEX_ENABLE_LLM_SUMMARIES` toggle. ~$0.02-0.05/day at typical
+trade volumes.
+
 ---
 
 ## Codebase invariants (enforced by tests — preserve under refactor)

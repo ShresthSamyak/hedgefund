@@ -165,6 +165,7 @@ def _aware(ts: datetime | None) -> datetime | None:
 def _trade_to_dict(t: Trade) -> dict[str, Any]:
     entry_aware = _aware(t.entry_ts)
     exit_aware = _aware(t.exit_ts)
+    payload = t.signal_payload or {}
     return {
         "id": t.id,
         "entry_ts": entry_aware.isoformat() if entry_aware is not None else None,
@@ -178,6 +179,7 @@ def _trade_to_dict(t: Trade) -> dict[str, Any]:
         "exit_price": t.exit_price,
         "pnl": t.pnl,
         "reason_text": t.reason_text,
+        "llm_reason": payload.get("llm_reason"),
         "paper": bool(t.paper),
         "open": t.exit_ts is None,
     }
