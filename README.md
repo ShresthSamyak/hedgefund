@@ -167,6 +167,15 @@ passes.
 ## Operator tools
 
 ```powershell
+# Replay the last 60 days of real Binance + yfinance data through every agent.
+# Prints the same scorecard tools.weekly_report uses, so paper-vs-backtest
+# numbers are directly comparable (the "live matches backtest within 20%"
+# paper-to-live trigger). Uses an isolated SQLite — never touches live data.
+python -m tools.backtest                             # last 60d, all agents
+python -m tools.backtest --days 90                   # longer window
+python -m tools.backtest --offline                   # synthetic data, no network
+python -m tools.backtest --agents trading_funding,trading_momentum
+
 # See the kill switch fire end-to-end before trusting it with real money.
 python -m tools.kill_switch_demo
 
