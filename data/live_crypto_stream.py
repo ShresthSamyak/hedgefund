@@ -70,9 +70,12 @@ class BinanceWebSocketStream:
     async def stop(self) -> None:
         self._stop.set()
         if self._task is not None:
-            await self._task
-            self._task = None
-        # Flush any in-flight partial bars.
+            self._task.cancel()
+            # Don't await — cancellation propagation can wait on the websocket
+            # close handshake. The daemon thread will clean up shortly. The
+            # caller (main shutdown) should not block on us.
+        # Flush any in-flight partial bars synchronously so the dashboard
+        # sees the last partial as a closed bar.
         for symbol, builder in self._builders.items():
             closed = builder.force_close()
             if closed is not None:

@@ -140,7 +140,8 @@ class AppContext:
             self._news_poller.stop()
         if self._ws_stream is not None and self._ws_loop is not None:
             try:
-                asyncio.run_coroutine_threadsafe(self._ws_stream.stop(), self._ws_loop).result(5.0)
+                # Fire-and-forget cancel; the daemon thread will clean up.
+                asyncio.run_coroutine_threadsafe(self._ws_stream.stop(), self._ws_loop)
                 self._ws_loop.call_soon_threadsafe(self._ws_loop.stop)
             except Exception:
                 log.exception("error stopping live stream")
