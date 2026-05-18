@@ -241,6 +241,7 @@ class Settings:
         self.binance = Binance()
         self.data = DataProviders()
         self.llm = LLM()
+        self.vertex = VertexAI()
         self.telegram = Telegram()
         self.risk = RiskRules()
         self.agents = AgentToggles()
