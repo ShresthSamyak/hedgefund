@@ -47,14 +47,18 @@ class ResearchIndia(Agent):
         feed: IndiaFeed,
         research_log: ResearchLog,
         scorer: Scorer | None = None,
+        llm: LLMClient | None = None,
         universe: tuple[str, ...] = DEFAULT_INDIA_UNIVERSE,
         news_limit: int = 10,
+        llm_summary_threshold: float = 0.70,
     ) -> None:
         self.feed = feed
         self.research_log = research_log
         self.scorer: Scorer = scorer or NullScorer()
+        self.llm: LLMClient = llm or NullLLM()
         self.universe = universe
         self.news_limit = news_limit
+        self.llm_summary_threshold = llm_summary_threshold
         self.settings = get_settings()
 
     def run_once(self) -> None:
@@ -69,26 +73,36 @@ class ResearchIndia(Agent):
             if items:
                 scores = self.scorer.score_batch([n.title for n in items])
                 avg = sum(s.signed for s in scores) / len(scores)
+                payload: dict[str, object] = {
+                    "headline_count": len(items),
+                    "headlines": [
+                        {
+                            "title": n.title,
+                            "link": n.link,
+                            "source": n.source,
+                            "published": n.published.isoformat(),
+                            "score": s.signed,
+                            "label": s.label,
+                        }
+                        for n, s in zip(items, scores, strict=False)
+                    ],
+                }
+                # Reasoning layer: only call the LLM when the FinBERT signal
+                # is strong enough to be worth narrating. NullLLM no-ops.
+                if (
+                    self.settings.vertex.enable_llm_summaries
+                    and abs(avg) >= self.llm_summary_threshold
+                ):
+                    summary = self._summarise(ticker, items, avg)
+                    if summary:
+                        payload["llm_summary"] = summary
                 signals.append(WriteSignal(
                     agent=self.name,
                     market="india",
                     ticker=ticker,
                     signal_type="sentiment_score",
                     value=avg,
-                    payload={
-                        "headline_count": len(items),
-                        "headlines": [
-                            {
-                                "title": n.title,
-                                "link": n.link,
-                                "source": n.source,
-                                "published": n.published.isoformat(),
-                                "score": s.signed,
-                                "label": s.label,
-                            }
-                            for n, s in zip(items, scores, strict=False)
-                        ],
-                    },
+                    payload=payload,
                 ))
 
             try:
