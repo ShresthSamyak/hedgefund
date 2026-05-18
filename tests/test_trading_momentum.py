@@ -74,14 +74,37 @@ def _build_env(*, now=None):
     return agent, feed, rl, tr
 
 
-def _seed_uptrend(feed: StaticIndiaFeed, ticker: str, *, volume: float = 1_000_000.0) -> None:
-    """Strong uptrend that will produce a bullish 8/32 cross at the last bar
-    and clear all filters (ADX > 20, price > 200-EMA).
+def _construct_closes_with_fresh_cross(
+    *, period_fast: int = 8, period_slow: int = 32, period_trend: int = 200
+) -> list[float]:
+    """Build a close series where EMA(fast) crosses above EMA(slow) at the
+    LAST bar. Provides at least `period_trend` bars and ends well above the
+    200-EMA so the trend filter also passes.
     """
-    # 70 bars: first 30 flat-ish around 100, then steady uptrend so the fast
-    # EMA crosses above the slow at the end.
-    closes = [100.0 + (i * 0.05) for i in range(40)]
-    closes += [102.0 + i * 1.5 for i in range(35)]
+    from models.indicators import ewma as _ewma
+
+    # Step 1: long uptrend to anchor the 200-EMA below current price.
+    closes: list[float] = [50.0 + i * 0.5 for i in range(period_trend)]
+    # Step 2: a brief dip so fast EMA falls below slow EMA.
+    base = closes[-1]
+    closes += [base - 2.0 - i * 1.0 for i in range(15)]
+    # Step 3: sharp recovery; append bars until the cross lands on the last one.
+    last = closes[-1]
+    for _ in range(60):
+        last += 3.0
+        closes.append(last)
+        f = _ewma(closes, period_fast)
+        s = _ewma(closes, period_slow)
+        if len(closes) < period_slow + 2 or f[-1] is None or s[-1] is None or f[-2] is None or s[-2] is None:
+            continue
+        if f[-2] <= s[-2] and f[-1] > s[-1]:
+            return closes
+    raise RuntimeError("could not construct a fresh cross series")
+
+
+def _seed_uptrend(feed: StaticIndiaFeed, ticker: str, *, volume: float = 1_000_000.0) -> None:
+    """Bullish-cross-at-last-bar series that also clears the ADX and trend filters."""
+    closes = _construct_closes_with_fresh_cross()
     feed.set_ohlc(ticker, _bars_from_closes(closes, volume=volume))
 
 
