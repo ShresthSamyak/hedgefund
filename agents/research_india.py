@@ -85,7 +85,7 @@ class ResearchIndia(Agent):
                                 "score": s.signed,
                                 "label": s.label,
                             }
-                            for n, s in zip(items, scores)
+                            for n, s in zip(items, scores, strict=False)
                         ],
                     },
                 ))

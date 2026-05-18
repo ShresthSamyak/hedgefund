@@ -33,6 +33,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]   # re-exports
-"tests/*"     = ["F401", "F841", "B018"]
+"tests/*"     = ["F401", "F841", "B007", "B018", "B905"]  # synthetic loops + literal expressions in fixtures
 "tools/*"     = ["F841"]
 "agents/*"    = ["F841"]   # intentional `_ignored` locals in branches

@@ -99,7 +99,7 @@ class TradingPairs(Agent):
 
         beta = fit["beta"]
         intercept = fit["intercept"]
-        spread = [y - (intercept + beta * x) for x, y in zip(closes_x, closes_y)]
+        spread = [y - (intercept + beta * x) for x, y in zip(closes_x, closes_y, strict=False)]
         zs = rolling_zscore(spread, sp.pairs_zscore_window)
         z_now = zs[-1]
         if z_now is None:

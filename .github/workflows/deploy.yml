@@ -1,0 +1,74 @@
+name: deploy
+
+# Auto-deploys to the Azure VM on green builds of `main`.
+# Required GitHub repo secrets:
+#   AZURE_HOST           e.g. azureuser@20.235.123.45
+#   AZURE_SSH_KEY        contents of your private SSH key (one that the VM trusts)
+#   AZURE_SSH_KNOWN_HOSTS (optional) output of `ssh-keyscan <ip>`; pinning the host
+#                        avoids first-time-connection prompts.
+#
+# Skips silently if the secrets aren't configured.
+
+on:
+  workflow_run:
+    workflows: ["python-ci"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false  # never overlap deploys
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run when the CI run we depend on actually passed.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Check deploy secrets are set
+        id: check_secrets
+        run: |
+          if [ -z "${{ secrets.AZURE_HOST }}" ] || [ -z "${{ secrets.AZURE_SSH_KEY }}" ]; then
+            echo "AZURE_HOST and/or AZURE_SSH_KEY not configured; skipping deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up SSH
+        if: steps.check_secrets.outputs.skip == 'false'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AZURE_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [ -n "${{ secrets.AZURE_SSH_KNOWN_HOSTS }}" ]; then
+            echo "${{ secrets.AZURE_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "${AZURE_HOST#*@}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+
+      - name: Deploy via SSH
+        if: steps.check_secrets.outputs.skip == 'false'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
+              "$AZURE_HOST" bash -s << 'REMOTE'
+            set -euo pipefail
+            sudo -u alphagrid bash -c '
+              cd /home/alphagrid/hedgefund
+              git fetch --all --quiet
+              git reset --hard origin/main
+              source venv/bin/activate
+              pip install -r requirements.txt --quiet --upgrade-strategy only-if-needed
+            '
+            sudo systemctl restart alphagrid alphagrid-api
+            sudo systemctl status --no-pager alphagrid alphagrid-api | tail -10
+          REMOTE
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}

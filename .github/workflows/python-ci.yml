@@ -1,0 +1,48 @@
+name: python-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.py"
+      - "test-requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/python-ci.yml"
+  pull_request:
+    paths:
+      - "**/*.py"
+      - "test-requirements.txt"
+      - "pyproject.toml"
+
+# Cancel an in-progress run when a new commit lands on the same branch.
+concurrency:
+  group: python-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: test-requirements.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r test-requirements.txt
+
+      - name: Ruff lint
+        run: python -m ruff check .
+
+      - name: Pytest
+        run: python -m pytest tests/ --timeout=30 -q
+        env:
+          # Force offline mode so tests don't hit the network in CI.
+          ALPHAGRID_DB_URL: "sqlite:///./ci.db"

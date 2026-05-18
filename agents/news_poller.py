@@ -102,7 +102,7 @@ class NewsPoller(Agent):
         if not fresh:
             return
         scores = self.scorer.score_batch([n.title for n in fresh])
-        for item, score in zip(fresh, scores):
+        for item, score in zip(fresh, scores, strict=False):
             self._seen.add(item.link)
             payload = _serialize(item, score)
             self.research_log.write(WriteSignal(

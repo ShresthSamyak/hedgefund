@@ -158,7 +158,7 @@ def detect_cross(fast: list[float | None], slow: list[float | None]) -> str | No
     below, or None if no crossover at the most recent bar.
     """
     pairs: list[tuple[float, float]] = [
-        (f, s) for f, s in zip(fast, slow) if f is not None and s is not None
+        (f, s) for f, s in zip(fast, slow, strict=False) if f is not None and s is not None
     ]
     if len(pairs) < 2:
         return None
