@@ -100,13 +100,30 @@ The bus has two implementations — `InMemoryBus` for paper mode and tests
 
 ## Dashboard
 
+Next.js frontend + FastAPI backend. Bloomberg-terminal dark theme,
+WebSocket live updates, mobile-friendly. See `web/README.md` and
+`deploy/README.md`.
+
 ```powershell
-streamlit run dashboard/app.py
+# Backend (port 8000)
+uvicorn api.main:app --reload
+
+# Frontend (port 3000) — separate terminal
+cd web; npm install; npm run dev
 ```
 
-Two views: **Live** (open positions, risk status, latest signals, regime)
-and **Track record** (cumulative P&L, per-agent stats, full trade table).
-Reads directly from the SQLite DB — no scheduler dependency.
+Architecture:
+
+```
+Browser → Vercel (Next.js)
+            ↓ REST + WebSocket
+          Azure VM
+            └─ nginx :80
+                ├─ uvicorn :8000  (api.main:app)  REST + WS broadcast
+                └─ python main.py                  scheduler + 8 agents
+                            ↕ Redis (cross-process bus)
+                          PostgreSQL (trade log + research log)
+```
 
 ## Tests
 
