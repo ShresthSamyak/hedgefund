@@ -111,6 +111,7 @@ class ResearchLog:
             for s in signals:
                 if not s.agent or not s.signal_type or not s.ticker:
                     raise ResearchLogError("agent, ticker, signal_type are required")
+                _ensure_finite(s.value, where="value")
                 _ensure_json_safe(s.payload)
                 sid = str(uuid.uuid4())
                 ids.append(sid)
@@ -183,6 +184,13 @@ class ResearchLog:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _ensure_finite(v: float, *, where: str) -> None:
+    """SQLite + downstream consumers blow up on NaN. Catch it at the boundary."""
+    import math
+    if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+        raise ResearchLogError(f"{where} must be a finite float, got {v!r}")
 
 
 def _ensure_json_safe(payload: dict[str, Any]) -> None:
