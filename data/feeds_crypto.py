@@ -84,6 +84,22 @@ class BinanceFeed:
             ))
         return out
 
+    def fetch_ohlc(
+        self, symbol: str, *, timeframe: str = "4h", limit: int = 200
+    ) -> list[DatedCryptoBar]:
+        raws = self._exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        out: list[DatedCryptoBar] = []
+        for row in raws:
+            ts_ms, o, h, low, c, v = row
+            out.append(DatedCryptoBar(
+                ts=datetime.fromtimestamp(int(ts_ms) / 1000.0, tz=timezone.utc),
+                bar=OHLCBar(
+                    open=float(o), high=float(h), low=float(low),
+                    close=float(c), volume=float(v),
+                ),
+            ))
+        return out
+
 
 class StaticCryptoFeed:
     """Test feed. Returns whatever values you hand it."""
