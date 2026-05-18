@@ -269,13 +269,15 @@ def test_trend_agent_no_entry_when_no_majority(monkeypatch) -> None:
 def test_trend_agent_exits_when_majority_flips(monkeypatch) -> None:
     agent, feed, _, tr = _build_trend_env()
     monkeypatch.setattr(agent.settings.strategy, "trend_universe", ("BTC/USDT",))
+    # Bullish phase ramps to 180, bearish phase decays back toward 50 — stays
+    # strictly positive so the exit-price assertion in track_record is happy.
     closes_up = [100.0 + i * 0.5 for i in range(160)]
     feed.set_ohlc("BTC/USDT", _crypto_bars(closes_up))
     agent.run_once()
     assert tr.open_positions(agent="trading_trend")
 
-    # Now append a long downtrend so the majority flips bearish.
-    closes_down = closes_up + [closes_up[-1] - i * 5.0 for i in range(1, 60)]
+    last = closes_up[-1]
+    closes_down = closes_up + [max(50.0, last - i * 1.5) for i in range(1, 80)]
     feed.set_ohlc("BTC/USDT", _crypto_bars(closes_down))
     agent.run_once()
     assert not tr.open_positions(agent="trading_trend")
