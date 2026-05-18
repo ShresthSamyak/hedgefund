@@ -35,7 +35,6 @@ from risk.risk_manager import (
     TradeProposal,
 )
 
-
 # ----------------------------------------------------------- approval gate tests
 
 

@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import get_settings
 from infra.signal_bus import SignalBus
 from record.research_log import ResearchLog
-from record.track_record import Trade, TrackRecord
+from record.track_record import TrackRecord, Trade
 
 log = logging.getLogger("alphagrid.api")
 

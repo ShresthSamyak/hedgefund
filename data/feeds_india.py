@@ -17,7 +17,6 @@ from urllib.parse import quote_plus
 
 from models.indicators import OHLCBar
 
-
 log = logging.getLogger(__name__)
 
 

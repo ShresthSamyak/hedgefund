@@ -16,7 +16,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
-
 log = logging.getLogger(__name__)
 
 

@@ -26,6 +26,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 from config.settings import get_settings
 from record.research_log import ResearchLog
 from record.track_record import TrackRecord

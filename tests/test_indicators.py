@@ -9,7 +9,6 @@ import pytest
 
 from models.indicators import OHLCBar, adx, atr, detect_cross, ewma, true_range
 
-
 # ----------------------------------------------------------------- EWMA
 
 

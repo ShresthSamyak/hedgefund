@@ -26,7 +26,6 @@ from record.research_log import ResearchLog, WriteSignal
 from record.track_record import TrackRecord
 from risk.risk_manager import FixedClock, RiskManager
 
-
 # ==================================================================== pairs math
 
 

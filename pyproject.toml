@@ -16,3 +16,23 @@ reportMissingImports = "warning"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = ["web", ".venv", "node_modules", ".next"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",  # line too long — long strings + URLs are fine
+    "E741",  # ambiguous variable name (single-letter math vars are clearer)
+    "E731",  # lambda assignment (used in factories)
+    "B008",  # function call in default args (FastAPI Depends / Query)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]   # re-exports
+"tests/*"     = ["F401", "F841", "B018"]
+"tools/*"     = ["F841"]
+"agents/*"    = ["F841"]   # intentional `_ignored` locals in branches

@@ -154,6 +154,7 @@ def check_risk_manager() -> tuple[Status, str]:
     """Reject an obviously bad proposal, approve a clean one."""
     from datetime import timezone as tz
     from zoneinfo import ZoneInfo
+
     from record.track_record import TrackRecord
     from risk.risk_manager import FixedClock, RiskManager, TradeProposal
     tr = TrackRecord(db_url="sqlite:///:memory:")
@@ -183,6 +184,7 @@ def check_trade_router_paper() -> tuple[Status, str]:
     """End-to-end paper trade: proposal -> risk -> approval -> log."""
     from datetime import timezone as tz
     from zoneinfo import ZoneInfo
+
     from comms.approval_gate import NullApprovalGate
     from execution.trade_router import TradeRouter
     from record.track_record import TrackRecord

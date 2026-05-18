@@ -12,7 +12,6 @@ from models.candle_builder import CandleBuilder
 from models.finbert_scorer import NullScorer, SentimentScore
 from record.research_log import ResearchLog
 
-
 # ====================================================================== SignalBus
 
 

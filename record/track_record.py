@@ -317,17 +317,17 @@ def _daily_returns(trades: list[Trade]) -> list[float]:
 def _render_monthly_pdf(year: int, month: int, trades: list[Trade], out_path: str) -> None:
     """Reportlab is a lazy import — the rest of the module works without it."""
     try:
+        from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import cm
         from reportlab.platypus import (
-            SimpleDocTemplate,
             Paragraph,
+            SimpleDocTemplate,
             Spacer,
             Table,
             TableStyle,
         )
-        from reportlab.lib import colors
     except ImportError as exc:
         raise TrackRecordError(
             "reportlab is required for monthly_pdf_report; pip install reportlab"

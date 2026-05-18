@@ -19,7 +19,6 @@ from record.research_log import ResearchLog, SignalRecord, WriteSignal
 from record.track_record import CloseTradeRequest, TrackRecord
 from risk.risk_manager import FixedClock, RiskManager
 
-
 # ----------------------------------------------------------- helpers
 
 IST_OPEN = datetime(2026, 5, 18, 10, 30, tzinfo=ZoneInfo("Asia/Kolkata"))

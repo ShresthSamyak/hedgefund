@@ -12,7 +12,6 @@ from typing import Protocol
 
 from models.indicators import OHLCBar
 
-
 log = logging.getLogger(__name__)
 
 
