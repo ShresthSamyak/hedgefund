@@ -241,6 +241,34 @@ at the VM's public IP. Every git push redeploys.
 
 ---
 
+## LLM reasoning layer (Vertex AI)
+
+`models/llm_client.py` adds reasoning on top of FinBERT — FinBERT keeps
+doing raw sentiment scoring (~35 ms/headline, local); Vertex generates
+one-sentence trade-impact narratives attached to high-signal records.
+
+Three tiers map task → model:
+
+| Tier | Model | Use case |
+|---|---|---|
+| `fast` | `gemini-3.1-flash-lite-preview` | routine, every 15 min; ~$0.075/M tokens |
+| `reasoning` | `gemini-3.1-pro-preview` | critical decisions, dashboard captions |
+| `coding` | `claude-sonnet-4-6` | code/agent tasks |
+
+Auth: `VERTEX_API_KEY` for laptop dev, ADC on Azure. If neither is
+configured, `build_llm_client()` returns `NullLLM` and every caller runs
+unchanged.
+
+`research_india.enable_llm_summaries` is **off by default** (gated by
+`VERTEX_ENABLE_LLM_SUMMARIES=true`). Only fires when FinBERT signal
+exceeds `|avg| >= 0.70` so cost stays minimal (~$0.60/month estimated).
+LLM failures are swallowed — sentiment still records when Vertex is down.
+
+To turn it on: set `VERTEX_API_KEY` + `VERTEX_ENABLE_LLM_SUMMARIES=true`
+in `.env`, then restart `alphagrid.service`.
+
+---
+
 ## Codebase invariants (enforced by tests — preserve under refactor)
 
 1. **Track record is append-only.** Closed rows raise `TrackRecordImmutableError` on mutation. `test_track_record.py::test_closing_twice_raises` + SQLAlchemy event guards in `record/track_record.py`.
