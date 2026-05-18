@@ -140,9 +140,18 @@ class StrategyParams(BaseSettings):
         "BAJFINANCE", "LT", "KOTAKBANK",
     )
 
-    pairs_zscore_entry: float = 2.0
-    pairs_zscore_exit: float = 0.0
+    # Pairs arbitrage. Thresholds from Indian-market stat-arb papers
+    # (QuantInsti EPAT 2015-2025, ArXiv 2412.12458 OU application).
+    pairs_zscore_entry: float = 2.0           # |z| >= 2 -> enter
+    pairs_zscore_exit: float = 0.5            # |z| <= 0.5 -> take profit
+    pairs_zscore_stop: float = 3.0            # |z| >= 3 -> close (regime break)
     pairs_cointegration_pvalue: float = 0.05
+    pairs_min_correlation: float = 0.70       # pre-screen before Engle-Granger
+    pairs_half_life_max_days: int = 10        # skip pairs that revert too slowly
+    pairs_max_holding_days: int = 15          # time-stop if no convergence
+    pairs_refit_days: int = 7                 # rebuild cointegration weekly
+    pairs_lookback_bars: int = 250            # ~1 year of trading days for fit
+    pairs_zscore_window: int = 30             # rolling Z-score lookback
     pairs_universe: tuple[tuple[str, str], ...] = (
         ("HDFCBANK", "ICICIBANK"),
         ("RELIANCE", "ONGC"),
@@ -171,14 +180,25 @@ class StrategyParams(BaseSettings):
         (0.0005,  1.00),  # >= 0.05% — max size within risk cap
     )
 
+    # Crypto trend. Multi-speed EWMA on BTC/ETH/SOL futures. Inverse-vol sized
+    # to a 10% annualized portfolio vol target — Bitcoin trend-following with
+    # vol scaling delivered ~1.6 Sharpe gross 2018-2025 in published research.
     trend_speeds: tuple[tuple[int, int], ...] = ((8, 32), (16, 64), (32, 128))
     trend_universe: tuple[str, ...] = ("BTC/USDT", "ETH/USDT", "SOL/USDT")
-    trend_target_portfolio_vol: float = 0.10
-    trend_min_speeds_agreeing: int = 2
+    trend_target_portfolio_vol: float = 0.10  # annualized vol target per symbol
+    trend_min_speeds_agreeing: int = 2        # 2-of-3 speed agreement required
+    trend_vol_lookback: int = 30              # bars for realized-vol estimate
+    trend_max_leverage: float = 3.0           # inverse-vol sizing capped here
+    trend_min_history_bars: int = 140         # need 128 for slowest speed + buffer
+    trend_atr_period: int = 14
 
+    # Crypto sentiment gate. Modulates funding+trend agent sizing in [-1, +1].
+    # MVRV thresholds from Nansen / on-chain research: <1.0 = bottom zone,
+    # >3.5 = top zone. Bullish on-chain signal -> +20% sizing; bearish -> -20%.
     crypto_sent_mvrv_bullish: float = 1.0
     crypto_sent_mvrv_bearish: float = 3.5
-    crypto_sent_size_modifier: float = 0.20
+    crypto_sent_size_modifier: float = 0.20   # symmetric ±20% size scaling
+    crypto_sent_lookback_hours: int = 24      # how far back to look for signals
 
 
 class Settings:
