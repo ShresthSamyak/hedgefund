@@ -39,8 +39,14 @@ class ResearchCrypto(Agent):
         for symbol in universe:
             try:
                 pt = self.feed.fetch_funding_rate(symbol)
+            except KeyError:
+                # Expected at the very start of a backtest window — no
+                # funding history visible yet under the no-future-leakage
+                # rule. Quietly skip; the next tick will have data.
+                log.debug("research_crypto: no funding data yet for %s — skipping tick", symbol)
+                continue
             except Exception:
-                log.exception("research_crypto fetch failed for %s — skipping this tick", symbol)
+                log.exception("research_crypto fetch failed for %s — skipping tick", symbol)
                 continue
             rates.append(pt.rate)
             signals.append(WriteSignal(
