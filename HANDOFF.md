@@ -217,6 +217,10 @@ These came directly from the user and are encoded in code, settings, or memory:
 | `python -m tools.weekly_report` | The 6 paper-trading metrics with PASS/FAIL | 0 iff every metric passes |
 | `python -m tools.backtest --days N` | Replay real Binance+yfinance data through every agent | 0 iff report.overall_pass |
 | `python -m tools.backtest --offline` | Same but with synthetic deterministic data | same |
+| `python -m tools.telegram_digest` | Send daily snapshot to Telegram (skips if not configured) | 0 always |
+| `python -m tools.telegram_digest --dry-run` | Print formatted message + LLM narrative without sending | 0 always |
+| `python -m tools.dry_run` | Simulate 7d to `reports/dry_run.db`; prints commands to point dashboard at it | 0 always |
+| `python -m tools.dry_run --live --with-llm` | Real data + LLM rationale chain | 0 always |
 | `python -m tools.telegram_digest` | Sends the daily snapshot to Telegram (skips if not configured) | 0 always |
 | `python -m tools.telegram_digest --dry-run` | Print the formatted message without sending | 0 always |
 | `python -m tools.dry_run` | Simulates 7d of paper trading to an isolated DB; prints exact commands to point the dashboard at it | 0 always |
