@@ -41,7 +41,7 @@ export function TradeFeed({ trades }: { trades: TradeRow[] }) {
                   <td className="px-4 py-2">{t.agent}</td>
                   <td className={`px-4 py-2 ${sideCls}`}>{t.side}</td>
                   <td className="px-4 py-2">{t.ticker}</td>
-                  <td className="px-4 py-2 text-right num">{t.qty}</td>
+                  <td className="px-4 py-2 text-right num">{formatQty(t.qty)}</td>
                   <td className="px-4 py-2 text-right num">{t.entry_price.toFixed(2)}</td>
                   <td className="px-4 py-2 text-right num">
                     {t.exit_price === null ? <span className="text-warn">open</span> : t.exit_price.toFixed(2)}
