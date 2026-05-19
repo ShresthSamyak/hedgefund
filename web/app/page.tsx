@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentGrid } from "@/components/AgentGrid";
 import { EquityChart } from "@/components/EquityChart";
+import { NavHeader } from "@/components/NavHeader";
 import { PortfolioBar } from "@/components/PortfolioBar";
 import { TradeFeed } from "@/components/TradeFeed";
 import {
@@ -90,22 +91,12 @@ export default function Page() {
     );
   }
 
-  const headerClass = useMemo(
-    () => "border-b border-border bg-bg/60 backdrop-blur sticky top-0 z-10 px-6 py-3 flex items-baseline justify-between",
-    [],
-  );
-
   return (
     <div className="min-h-screen bg-bg">
-      <header className={headerClass}>
-        <div>
-          <div className="font-mono text-sm tracking-wider">ALPHAGRID</div>
-          <div className="text-[10px] text-muted">autonomous trading terminal</div>
-        </div>
-        <div className="text-[10px] text-muted font-mono">
-          {error ? <span className="text-neg">api error: {error}</span> : "connected"}
-        </div>
-      </header>
+      <NavHeader
+        active="terminal"
+        rightStatus={error ? <span className="text-neg">api error: {error}</span> : "connected"}
+      />
 
       <main className="p-6 grid gap-6 max-w-[1600px] mx-auto">
         <PortfolioBar data={portfolio} />
