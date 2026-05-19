@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
-from typing import Any, Literal
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Literal
 
 from comms.approval_gate import ApprovalGate
 from config.settings import get_settings
@@ -63,6 +63,7 @@ class TradeRouter:
         require_human_approval: bool | None = None,
         approval_timeout: timedelta | None = None,
         llm: LLMClient | None = None,
+        now_fn: Callable[[], datetime] | None = None,
     ) -> None:
         self.risk = risk_manager
         self.gate = approval_gate
@@ -77,6 +78,9 @@ class TradeRouter:
         )
         self.approval_timeout = approval_timeout or timedelta(minutes=10)
         self.paper = settings.runtime.paper_mode
+        # Lets the BacktestRunner inject its virtual clock so dry-run trades
+        # carry sim-time entry_ts instead of wall-clock.
+        self._now: Callable[[], datetime] = now_fn or (lambda: datetime.now(timezone.utc))
 
     def submit(self, proposal: TradeProposal) -> TradeOutcome:
         decision = self.risk.review(proposal)
@@ -132,6 +136,7 @@ class TradeRouter:
                 reason_text=proposal.reason_text,
                 signal_payload=signal_payload,
                 paper=self.paper,
+                entry_ts=self._now(),
             )
         )
         log.info(

@@ -112,6 +112,7 @@ class BacktestRunner:
             track_record=track_record,
             require_human_approval=False,
             llm=llm,
+            now_fn=clock.now,
         )
 
     def run(

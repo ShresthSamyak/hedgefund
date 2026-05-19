@@ -69,3 +69,13 @@ export function TradeFeed({ trades }: { trades: TradeRow[] }) {
     </div>
   );
 }
+
+function formatQty(qty: number): string {
+  // Show up to 6 sig figs without trailing zeros so 0.00442301738... renders
+  // as 0.004423 and 1.04188372... as 1.04188.
+  if (qty === 0) return "0";
+  const abs = Math.abs(qty);
+  if (abs >= 1) return qty.toFixed(4).replace(/\.?0+$/, "");
+  if (abs >= 0.01) return qty.toFixed(6).replace(/\.?0+$/, "");
+  return qty.toPrecision(4);
+}
