@@ -225,21 +225,39 @@ def portfolio() -> dict[str, Any]:
     }
 
 
+KNOWN_AGENTS = (
+    "research_india", "research_crypto",
+    "trading_funding", "trading_momentum", "trading_sentiment",
+    "trading_pairs", "trading_trend", "trading_crypto_sent",
+)
+
+
+def _empty_agent_row(name: str) -> dict[str, Any]:
+    return {
+        "name": name, "trades_24h": 0, "wins": 0, "losses": 0,
+        "pnl_24h": 0.0, "open_positions": 0, "last_signal_ts": None,
+        "win_rate": 0.0, "status": "no_signal",
+    }
+
+
 @app.get("/agents")
 def agents() -> dict[str, Any]:
-    """Per-agent stats over the last 24h plus latest research signal."""
+    """Per-agent stats over the last 24h plus latest research signal.
+
+    Every known agent is returned, even with zero activity, so the
+    dashboard can render empty cards rather than hide them. This matches
+    the performance page's behavior.
+    """
     tr = STATE.track_record
     rl = STATE.research_log
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     closed = tr.closed_trades(since=since)
     opens = tr.open_positions()
 
-    by_agent: dict[str, dict[str, Any]] = {}
+    by_agent: dict[str, dict[str, Any]] = {n: _empty_agent_row(n) for n in KNOWN_AGENTS}
+
     for t in closed:
-        s = by_agent.setdefault(t.agent, {
-            "name": t.agent, "trades_24h": 0, "wins": 0, "losses": 0,
-            "pnl_24h": 0.0, "open_positions": 0, "last_signal_ts": None,
-        })
+        s = by_agent.setdefault(t.agent, _empty_agent_row(t.agent))
         s["trades_24h"] += 1
         s["pnl_24h"] += t.pnl or 0.0
         if (t.pnl or 0.0) > 0:
@@ -247,10 +265,7 @@ def agents() -> dict[str, Any]:
         elif (t.pnl or 0.0) < 0:
             s["losses"] += 1
     for t in opens:
-        s = by_agent.setdefault(t.agent, {
-            "name": t.agent, "trades_24h": 0, "wins": 0, "losses": 0,
-            "pnl_24h": 0.0, "open_positions": 0, "last_signal_ts": None,
-        })
+        s = by_agent.setdefault(t.agent, _empty_agent_row(t.agent))
         s["open_positions"] += 1
 
     # Pull last research signal timestamp per agent.
@@ -263,9 +278,12 @@ def agents() -> dict[str, Any]:
         denom = s["wins"] + s["losses"]
         s["win_rate"] = (s["wins"] / denom) if denom else 0.0
         s["pnl_24h"] = round(s["pnl_24h"], 2)
-        s["status"] = "running"
-        if s["pnl_24h"] < 0:
+        if s["trades_24h"] == 0 and s["open_positions"] == 0:
+            s["status"] = "no_signal"
+        elif s["pnl_24h"] < 0:
             s["status"] = "losing"
+        else:
+            s["status"] = "running"
     return {"agents": sorted(by_agent.values(), key=lambda x: x["name"])}
 
 

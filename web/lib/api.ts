@@ -18,7 +18,7 @@ export type Portfolio = {
 
 export type AgentStat = {
   name: string;
-  status: "running" | "losing" | "paused" | "killed";
+  status: "running" | "losing" | "paused" | "killed" | "no_signal";
   trades_24h: number;
   wins: number;
   losses: number;
