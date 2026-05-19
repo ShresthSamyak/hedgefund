@@ -28,7 +28,6 @@ from fastapi import APIRouter, Query
 from config.settings import get_settings
 from record.track_record import Trade
 
-
 router = APIRouter()
 
 
@@ -351,7 +350,7 @@ def _correlation_matrix(closed: list[Trade]) -> dict | None:
 
 @router.get("/performance/summary")
 def performance_summary(window_days: int = Query(90, ge=1, le=3650)) -> dict[str, Any]:
-    from api.main import STATE   # late import to avoid circular
+    from api.main import STATE  # late import to avoid circular
 
     settings = get_settings()
     now = datetime.now(timezone.utc)
