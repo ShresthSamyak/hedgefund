@@ -140,6 +140,10 @@ def _redis_reachable(url: str) -> bool:
 
 app = FastAPI(title="AlphaGrid API", version="0.1.0")
 
+from api.performance import router as performance_router  # noqa: E402
+
+app.include_router(performance_router)
+
 
 @app.on_event("startup")
 def _on_startup() -> None:
