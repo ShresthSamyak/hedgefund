@@ -2,21 +2,41 @@
 
 > Read this first if you're picking the project up cold. It captures what's
 > built, what's not, what the locked decisions are, and where to look next.
-> Last updated: 2026-05-19.
+> Last updated: 2026-05-19 (evening — local preview verified, brokers pending).
 
 ## TL;DR
 
 AlphaGrid is a feature-complete 8-agent algorithmic trading system covering
 Indian equities (Angel One) and crypto (Binance). All agents are real, the
-real-time layer is wired, the dashboard is live, CI is green, and a
-backtest harness validates strategies against historical data. **207 tests
-pass.** The system is ready to enter a 7-day paper burn-in. Real capital
-is gated behind 4 locked paper-to-live triggers.
+real-time layer is wired, both dashboard pages are live, CI is green, the
+LLM reasoning layer (Vertex AI) is wired end-to-end across 3 use cases, and
+a backtest harness validates strategies against historical data. **249 tests
+pass.** The system has been verified locally with real Binance + yfinance
+data: 30-day dry-run produces 3 closed trades on `trading_trend` with the
+expected -$9.15 P&L; all 7 other agents correctly refuse signals on
+present-regime data. Awaiting broker activation to start the burn-in.
 
 The user is **Shresth Samyak**, a solo builder in India deploying his own
 capital (₹5K–₹20K). He optimizes for an auditable track record, not
 short-term P&L. He has paid Azure credits and intends to host on a single
 `Standard_B2s` VM in South India.
+
+## Pending operator actions (resume tomorrow morning)
+
+- **Angel One account** — KYC submitted 2026-05-19, "Documents Successfully
+  Verified" page seen. Activation email + Client ID expected within 1
+  working day. Steps when it arrives: log into trade.angelone.in → set
+  password → enable TOTP and **copy the base32 secret** → register on
+  smartapi.angelbroking.com → create Trading API app → fill
+  `ANGEL_*` in `.env`.
+- **Binance account** — pending KYC. Once verified, generate API key
+  under Account → API Management. Public spot WS works without auth, so
+  the price feed is already live; keys are only needed for live order
+  placement.
+- **GitHub push** — local repo has 249 tests + complete codebase; not yet
+  pushed. `.env` is `.gitignored` and confirmed never tracked
+  (`git ls-files .env` returns blank).
+- **Azure VM** — not yet provisioned. Plan locked in HANDOFF below + `deploy/README.md`.
 
 ---
 
@@ -34,13 +54,18 @@ short-term P&L. He has paid Azure credits and intends to host on a single
 | Week 8 — trading_pairs / trend / crypto_sent gate | done — 21 tests |
 | Week 9 — Real-time layer (SignalBus, WebSocket, NewsPoller) | done — 22 tests |
 | Week 9 — Dashboard (Next.js + FastAPI replaced Streamlit) | done — 9 API tests |
-| **Week 10 — 7-day paper burn-in** | **not started — operator-only** |
+| Week 9.5 — Vertex AI LLM layer (3 tiers, 3 use cases) | done — 7 tests; **toggle OFF by default** |
+| Week 9.5 — Performance dashboard page (/performance) | done — 9 API tests + 6 components |
+| Week 9.5 — Home page UX polish (idle agents, sparse equity) | done |
+| Week 9.5 — Dry-run preview tool + sim-clock timestamps | done — 4 tests |
+| **Week 10 — 7-day paper burn-in** | **awaiting broker activation** |
 | Week 11 — flip live with ₹5K | gated |
 
 Operator tools built but not on the original build plan: `healthcheck`,
-`kill_switch_demo`, `daily_snapshot`, `weekly_report`, `backtest`.
-Deployment: `setup.sh` + `deploy.sh` + 4 systemd units + Nginx. CI: 3
-GitHub Actions workflows including a gated auto-deploy to Azure.
+`kill_switch_demo`, `daily_snapshot`, `weekly_report`, `backtest`,
+`telegram_digest` (with LLM narrative), `dry_run`. Deployment: `setup.sh`
++ `deploy.sh` + 5 systemd units + Nginx. CI: 3 GitHub Actions workflows
+including a gated auto-deploy to Azure.
 
 ---
 
@@ -74,8 +99,11 @@ hedgefund/
 ├── models/                       # indicators, candle_builder, finbert_scorer, pairs
 ├── record/                       # track_record.py + research_log.py (both append-only)
 ├── risk/risk_manager.py          # 6 locked rules; the trust boundary
-├── tests/                        # 207 tests across 14 files
-├── tools/                        # operator CLIs (5 of them)
+├── api/performance.py            # /performance/summary endpoint (deep analytics)
+├── tests/                        # 249 tests across 21 files
+├── tools/                        # operator CLIs (7: healthcheck, kill_switch_demo,
+│                                 #  daily_snapshot, weekly_report, telegram_digest,
+│                                 #  backtest, dry_run)
 ├── web/                          # Next.js 16 dashboard (was Next 14; user upgraded)
 ├── .github/workflows/            # python-ci, web-ci, deploy
 ├── main.py                       # entry: AppContext + scheduler + WS + news_poller
