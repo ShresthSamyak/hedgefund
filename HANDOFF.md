@@ -175,7 +175,7 @@ These came directly from the user and are encoded in code, settings, or memory:
 
 ---
 
-## Test inventory (207 passing in ~16s)
+## Test inventory (249 passing in ~17s)
 
 | File | Tests | Covers |
 |---|---|---|
@@ -198,6 +198,11 @@ These came directly from the user and are encoded in code, settings, or memory:
 | `test_weekly_report.py` | 12 | 6 metrics + render + thresholds |
 | `test_api.py` | 9 | REST endpoints + WS fan-out |
 | `test_backtest.py` | 11 | clock, feeds, runner, **no-future-leakage invariant** |
+| `test_telegram_digest.py` | 15 | format, narrative, transport, 4096-char truncation |
+| `test_llm_client.py` | 7 | NullLLM, factory, threshold gating, error swallow |
+| `test_trade_router_llm.py` | 7 | rationale attached, toggle, error swallow, no-call on reject |
+| `test_dry_run.py` | 4 | DB written, db replaces, parent created, all 8 agents invoked |
+| `test_performance_api.py` | 9 | empty envelope, aggregation, correlation appearance/absence, llm_reason |
 
 ---
 
