@@ -353,6 +353,12 @@ These are now permanent regression tests — don't reintroduce:
 | Trend downtrend test produced negative close prices | test runner crash | `max(50, ...)` floor in synthetic data |
 | yfinance NaN close near market open | live backtest IntegrityError | `_ensure_finite` guard + tools/backtest filter |
 | Mathematical redundancy: "all ≥ threshold" + "decay-weighted ≥ threshold" | sentiment decay test | Restructured to "latest ≥ threshold" + "decay-weighted ≥ threshold" |
+| Backtest trades stamped with wall-clock entry_ts, not sim-time | dashboard showed all trades at 5:07:42 | `TradeRouter` now accepts `now_fn`; `BacktestRunner` passes `clock.now` |
+| `research_crypto` noisy traceback at start of backtest window | dry_run output | Catch `KeyError` from feed at boundary; log at DEBUG without traceback |
+| Quantities rendered with 18 decimal places | screenshot review | `formatQty()` in `TradeFeed.tsx` rounds to 4–6 sig figs |
+| Vertex `coding` tier (Claude Sonnet) 404 with API key | LLM tier test | Documented: partner models require ADC, not API key. `fast`/`reasoning` tiers work. |
+| Windows console can't render `⚠` / `—` in `daily_snapshot`/`telegram_digest` | tools output | Replaced with `[!]` / `-` ASCII |
+| Home `/agents` endpoint filtered out idle agents → looked "hardcoded" vs Performance page | UI review | Returns all 8 known agents always; status `no_signal` for idle |
 
 ---
 
@@ -403,15 +409,31 @@ Future enhancements the user has mentioned but not committed to:
 
 - Glassnode integration (paid $39/mo) → would feed MVRV into `trading_crypto_sent`
 - Reddit/X sentiment → social_sentiment input for the regime gate
-- LLM reasoning summaries on each trade for the dashboard
+- ✅ LLM reasoning summaries on each trade — **DONE** (Vertex AI, gated by `VERTEX_ENABLE_LLM_SUMMARIES`)
+
+---
+
+## What was verified on 2026-05-19 (local preview)
+
+End-to-end ran clean against `reports/dry_run.db` (30-day live Binance + yfinance replay):
+
+- `tools.healthcheck` — **8/8 PASS** (live Binance bar at $77K, FinBERT scored +0.82, RSS 2KB+)
+- `tools.kill_switch_demo` — fires + persists correctly
+- `tools.dry_run --live --days 30` — 181 ticks, 1268 invocations, 3 closed + 3 open trades, -$9.15 P&L
+- FastAPI backend (`uvicorn api.main:app`) — all 4 home endpoints + `/performance/summary` return valid data
+- Next.js dashboard at `localhost:3000` — both **Terminal** and **Performance** tabs render real data correctly
+- Vertex AI tiers — `fast` (Flash Lite) ✅, `reasoning` (Gemini Pro) ✅, `coding` (Claude Sonnet) requires ADC instead of API key (not blocking — tier wired but unused by any agent)
+- 249 tests pass, ruff clean
+
+User explicitly confirmed: dashboard looks correct, numbers traced back to SQLite source rows. **Nothing is hardcoded**; the data is just sparse because real markets gave the trend agent only 3 signals over 30 days.
 
 ---
 
 ## How to resume in a new session
 
 1. **Read this file first.** It's load-bearing.
-2. Check `MEMORY.md` for the 9 structured memories.
-3. Run `python -m pytest tests/ -q --timeout=20` to confirm 207 passing.
+2. Check `MEMORY.md` for the 11 structured memories (under `~/.claude/projects/.../memory/`).
+3. Run `python -m pytest tests/ -q --timeout=20` to confirm **249 passing**.
 4. Run `python -m tools.healthcheck --offline` to confirm essentials green.
 5. If the user references something specific, grep first — don't guess:
    - settings: `config/settings.py`
@@ -422,3 +444,55 @@ Future enhancements the user has mentioned but not committed to:
 8. **Do not** flip `PAPER_MODE=false` without the 4 triggers passing.
 
 When in doubt about what's already built: `git log --oneline -50`.
+
+---
+
+## Tomorrow's resume path (specific to 2026-05-20+)
+
+The pending-operator-actions section at the top of this doc is the
+critical path. Once those land:
+
+```powershell
+# 1. Confirm Angel One + Binance accounts active. Update .env on this machine.
+notepad C:\Users\HP\Documents\hedgefund\.env
+# Fill in:  ANGEL_API_KEY, ANGEL_CLIENT_CODE, ANGEL_PASSWORD,
+#           ANGEL_TOTP_SECRET, BINANCE_API_KEY, BINANCE_API_SECRET
+
+# 2. Quick sanity check.
+python -m tools.healthcheck                 # all 8 PASS
+python -m pytest tests/ -q --timeout=20     # 249 PASS
+
+# 3. Push to GitHub. .env is gitignored (verified earlier — never tracked).
+git remote add origin https://github.com/ShresthSamyak/hedgefund.git
+git add -A && git commit -m "AlphaGrid v1: ready for paper burn-in"
+git push -u origin main
+
+# 4. Provision Azure VM (deploy/README.md has the exact portal steps).
+#    Region: South India, Size: Standard_B2s, OS: Ubuntu 22.04
+#    Ports 22 + 80 inbound. SSH key downloaded to ~/.ssh/alphagrid-key.pem.
+
+# 5. On the VM:
+sudo apt install -y git
+git clone https://github.com/ShresthSamyak/hedgefund.git /tmp/hedgefund
+sudo REPO_URL=https://github.com/ShresthSamyak/hedgefund.git bash /tmp/hedgefund/deploy/setup.sh
+
+# 6. Add API keys to VM .env, restart services, run healthcheck on VM.
+sudo -u alphagrid nano /home/alphagrid/hedgefund/.env
+sudo systemctl restart alphagrid alphagrid-api
+sudo -u alphagrid bash -c 'cd /home/alphagrid/hedgefund && source venv/bin/activate && python -m tools.healthcheck'
+
+# 7. Vercel for the frontend.
+cd web && npx vercel
+#    Set NEXT_PUBLIC_API_URL + NEXT_PUBLIC_WS_URL to the VM's public IP.
+
+# 8. Configure GitHub Actions secrets for auto-deploy:
+#    AZURE_HOST, AZURE_SSH_KEY (paste contents of .pem), AZURE_SSH_KNOWN_HOSTS.
+```
+
+LLM toggle is OFF in `.env` per user's earlier choice (first 7 days). Flip
+`VERTEX_ENABLE_LLM_SUMMARIES=true` later if narratives are wanted during
+the burn-in.
+
+The 60-day clock starts the moment `python -m main` runs continuously on
+the VM. Use `tools.weekly_report` once a week to track the 4 paper-to-live
+triggers automatically.
