@@ -161,6 +161,28 @@ class AppContext:
         self.bus.shutdown()
 
 
+def _build_broker(settings) -> Broker:
+    """NullBroker in paper mode. BybitBroker requires paper_mode=False and
+    BYBIT_API_KEY/SECRET in .env. Falls back to NullBroker with a warning
+    if keys are missing, so a forgotten env var can't accidentally route
+    real-money trades to a misconfigured exchange."""
+    if settings.runtime.paper_mode:
+        log.info("paper mode — using NullBroker (no real orders)")
+        return NullBroker()
+    if not (settings.bybit.api_key and settings.bybit.api_secret):
+        log.warning(
+            "PAPER_MODE=false but BYBIT_API_KEY/SECRET not set — "
+            "falling back to NullBroker. Set keys in .env to go live."
+        )
+        return NullBroker()
+    log.info("live mode — using BybitBroker (testnet=%s)", settings.bybit.testnet)
+    return BybitBroker(
+        api_key=settings.bybit.api_key,
+        api_secret=settings.bybit.api_secret,
+        testnet=settings.bybit.testnet,
+    )
+
+
 def _build_approval_gate(settings) -> ApprovalGate:
     """Use Telegram if both token + chat id are set; otherwise auto-approve."""
     tg = settings.telegram
