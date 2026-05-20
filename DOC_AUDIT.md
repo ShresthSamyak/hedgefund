@@ -101,8 +101,9 @@ Settings cited by name (`momentum_*`, `funding_*`, etc.) live in
 |---|---|---|
 | MVRV thresholds 1.0 / 3.5 | MATCH | `crypto_sent_mvrv_bullish=1.0`, `crypto_sent_mvrv_bearish=3.5`. |
 | MVRV score → size modifier ±20% | MATCH | `_mvrv_to_score` in `agents/trading_crypto_sent.py`. |
-| SOPR signal (crossing 1 from below) | **GAP** | Not implemented. Would require Glassnode subscription. |
-| Exchange netflow | **GAP** | Not implemented. Same reason. |
+| MVRV data source | **MATCH (free)** | **CoinMetrics Community API** (no auth, ~1.6 RPS) via `data/onchain.py::CoinMetricsClient`. Uses `CapMVRVCur` (current-supply variant); `CapMVRVFF` free-float requires paid tier. Glassnode at $999/mo not needed at this scale. Live test 2026-05-19: BTC 1.42, ETH 0.96. |
+| SOPR signal (crossing 1 from below) | **GAP** | Not implemented. CoinMetrics community has SOPR via `SplyAdrCur` but trading_crypto_sent doesn't consume it yet. Add later. |
+| Exchange netflow | **GAP** | Not implemented. Requires paid tier. |
 | Reddit sentiment via PRAW | **GAP** | Not implemented. The `data.reddit_*` settings exist as placeholders. |
 | Aggregate `regime_score` formula with w1..w5 weights | **DIVERGES** | We compute the simpler arithmetic average of available components (`regime + mvrv + social`), with missing components excluded so they don't dilute toward zero. Functionally equivalent when only MVRV is wired, simpler than the doc's weighted scheme. |
 
@@ -188,7 +189,7 @@ All accurate and matches what's in our memory notes (`project_funding_arb_refine
 
 ## Summary
 
-**12 MATCH** entries, **15 DIVERGES (defensible)** entries, **8 GAP** entries.
+**13 MATCH** entries, **15 DIVERGES (defensible)** entries, **7 GAP** entries (was 8 — MVRV closed 2026-05-19 via free CoinMetrics Community API).
 
 **The defensible divergences make the code more conservative than the doc.**
 Every one tightens entry conditions, widens stops, or shortens hold time

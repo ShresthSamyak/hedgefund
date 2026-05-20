@@ -2,7 +2,8 @@
 
 > Read this first if you're picking the project up cold. It captures what's
 > built, what's not, what the locked decisions are, and where to look next.
-> Last updated: 2026-05-19 (evening — local preview verified, brokers pending).
+> Last updated: 2026-05-19 (evening — local preview verified, brokers
+> pending, CoinMetrics MVRV wired free).
 
 ## TL;DR
 
@@ -58,6 +59,7 @@ short-term P&L. He has paid Azure credits and intends to host on a single
 | Week 9.5 — Performance dashboard page (/performance) | done — 9 API tests + 6 components |
 | Week 9.5 — Home page UX polish (idle agents, sparse equity) | done |
 | Week 9.5 — Dry-run preview tool + sim-clock timestamps | done — 4 tests |
+| Week 9.5 — CoinMetrics MVRV (free, no auth) | done — 14 tests |
 | **Week 10 — 7-day paper burn-in** | **awaiting broker activation** |
 | Week 11 — flip live with ₹5K | gated |
 
@@ -175,7 +177,7 @@ These came directly from the user and are encoded in code, settings, or memory:
 
 ---
 
-## Test inventory (249 passing in ~17s)
+## Test inventory (263 passing in ~30s)
 
 | File | Tests | Covers |
 |---|---|---|
@@ -203,6 +205,7 @@ These came directly from the user and are encoded in code, settings, or memory:
 | `test_trade_router_llm.py` | 7 | rationale attached, toggle, error swallow, no-call on reject |
 | `test_dry_run.py` | 4 | DB written, db replaces, parent created, all 8 agents invoked |
 | `test_performance_api.py` | 9 | empty envelope, aggregation, correlation appearance/absence, llm_reason |
+| `test_onchain.py` | 14 | CoinMetrics client (real-response shape, HTTP errors, parsing), research_crypto MVRV integration, end-to-end propagation into regime gate |
 
 ---
 
@@ -367,11 +370,16 @@ These are now permanent regression tests — don't reintroduce:
 `DOC_AUDIT.md` is a claim-by-claim walk through the technical reference
 writeup ("AlphaGrid: A Deep Technical Reference Architecture for a
 Multi-Agent Algorithmic Hedge Fund") against the actual code.
-Counts: **12 MATCH**, **15 DIVERGES (defensible, code more conservative)**,
-**8 GAP (aspirational, not built)**. Read it before showing the reference
+Counts: **13 MATCH**, **15 DIVERGES (defensible, code more conservative)**,
+**7 GAP (aspirational, not built)**. Read it before showing the reference
 doc to anyone external.
 
-The 8 GAP items, prioritised: NSE F&O research agent (Agent 7 in the
+**Update 2026-05-19:** MVRV gap closed via CoinMetrics Community API
+(free, no auth). Uses `CapMVRVCur` (current-supply variant; `CapMVRVFF`
+free-float requires paid tier). Glassnode at $999/mo is too expensive
+for this scale and isn't needed for MVRV alone.
+
+Remaining 7 GAP items, prioritised: NSE F&O research agent (Agent 7 in the
 spec) → SOPR + netflow signals → Reddit/X PRAW → ONNX export → ER chop
 filter → India VIX dampener → PnL-correlation block → Kafka audit
 mirror. None block the burn-in.
@@ -433,7 +441,7 @@ User explicitly confirmed: dashboard looks correct, numbers traced back to SQLit
 
 1. **Read this file first.** It's load-bearing.
 2. Check `MEMORY.md` for the 11 structured memories (under `~/.claude/projects/.../memory/`).
-3. Run `python -m pytest tests/ -q --timeout=20` to confirm **249 passing**.
+3. Run `python -m pytest tests/ -q --timeout=20` to confirm **263 passing**.
 4. Run `python -m tools.healthcheck --offline` to confirm essentials green.
 5. If the user references something specific, grep first — don't guess:
    - settings: `config/settings.py`
