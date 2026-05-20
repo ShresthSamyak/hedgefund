@@ -35,6 +35,7 @@ from config.settings import get_settings
 from data.feeds_crypto import BinanceFeed
 from data.feeds_india import GoogleNewsAndYFinanceFeed, IndiaFeed
 from data.live_crypto_stream import BinanceWebSocketStream
+from data.onchain import CoinMetricsClient
 from execution.trade_router import TradeRouter
 from infra.signal_bus import InMemoryBus, SignalBus
 from models.finbert_scorer import FinBertScorer, NullScorer, Scorer
@@ -191,7 +192,11 @@ def _enabled_agents(ctx: AppContext, scorer: Scorer, llm: LLMClient) -> Iterable
         )
 
     if toggles.enable_research_crypto:
-        yield ResearchCrypto(feed=ctx.crypto_feed(), research_log=ctx.research_log)
+        yield ResearchCrypto(
+            feed=ctx.crypto_feed(),
+            research_log=ctx.research_log,
+            onchain=CoinMetricsClient(),   # free, no auth — MVRV every 8h tick
+        )
 
     if toggles.enable_trading_funding:
         yield TradingFunding(
