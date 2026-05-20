@@ -17,6 +17,7 @@ from datetime import timedelta
 from agents.base import Agent, AgentCadence
 from config.settings import get_settings
 from data.feeds_crypto import CryptoFeed
+from data.onchain import OnChainFeed
 from record.research_log import ResearchLog, WriteSignal
 
 log = logging.getLogger(__name__)
@@ -26,9 +27,15 @@ class ResearchCrypto(Agent):
     name = "research_crypto"
     cadence = AgentCadence(every=timedelta(hours=8), aligned_to="binance_funding_8h")
 
-    def __init__(self, feed: CryptoFeed, research_log: ResearchLog) -> None:
+    def __init__(
+        self,
+        feed: CryptoFeed,
+        research_log: ResearchLog,
+        onchain: OnChainFeed | None = None,
+    ) -> None:
         self.feed = feed
         self.research_log = research_log
+        self.onchain = onchain
         self.settings = get_settings()
 
     def run_once(self) -> None:
