@@ -20,7 +20,6 @@ from execution.broker import (
     _to_linear_symbol,
 )
 
-
 # ---------------------------------------------------------------- NullBroker
 
 

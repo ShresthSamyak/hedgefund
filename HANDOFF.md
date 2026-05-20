@@ -2,8 +2,9 @@
 
 > Read this first if you're picking the project up cold. It captures what's
 > built, what's not, what the locked decisions are, and where to look next.
-> Last updated: 2026-05-19 (evening — local preview verified, brokers
-> pending, CoinMetrics MVRV wired free).
+> Last updated: 2026-05-20 (Bybit execution broker wired — Binance trading
+> endpoints are region-blocked for India IPs, so live orders route to Bybit
+> while public market data continues to come from Binance).
 
 ## TL;DR
 
@@ -30,10 +31,14 @@ short-term P&L. He has paid Azure credits and intends to host on a single
   password → enable TOTP and **copy the base32 secret** → register on
   smartapi.angelbroking.com → create Trading API app → fill
   `ANGEL_*` in `.env`.
-- **Binance account** — pending KYC. Once verified, generate API key
-  under Account → API Management. Public spot WS works without auth, so
-  the price feed is already live; keys are only needed for live order
-  placement.
+- **Bybit account** (live order placement) — sign up at bybit.com, complete
+  KYC (Indian users have full API trading access), then Account → API
+  Management → create a key with **Contract Trade** scope. Fill
+  `BYBIT_API_KEY` / `BYBIT_API_SECRET` in `.env`. Keep `BYBIT_TESTNET=true`
+  until the first 24h of live testnet flow look clean.
+- **Binance account** — only needed if/when Binance ever re-opens trading
+  for India. Public spot WebSocket + REST OHLC/funding work without keys,
+  so the data path is already live with no credentials.
 - **GitHub push** — local repo has 249 tests + complete codebase; not yet
   pushed. `.env` is `.gitignored` and confirmed never tracked
   (`git ls-files .env` returns blank).
@@ -172,19 +177,21 @@ These came directly from the user and are encoded in code, settings, or memory:
 - **Drawdown semantics:** max-drawdown over rolling window. **Kill switch persists even after equity recovery** until the loss event ages out (intentional — see `tests/test_kill_switch_integration.py::test_kill_switch_persists_after_equity_recovery`).
 - **Streamlit deleted.** User explicitly does not want it. Dashboard is Next.js (in `web/`) + FastAPI (in `api/`).
 - **Spot endpoint for Binance WebSocket.** Futures was region-blocked. `futures=True` is opt-in.
+- **Live order placement runs through Bybit, not Binance.** Binance trading endpoints are blocked for Indian users (KYC region restrictions); public market-data endpoints aren't, so the data layer stays on Binance and only the execution path switches. Wired via `execution/broker.py` — `NullBroker` in paper mode, `BybitBroker` (ccxt linear/USDT perp) when `paper_mode=False` and `BYBIT_API_KEY/SECRET` are set. A new `rejected_by_broker` outcome state captures broker failures without polluting TrackRecord.
 - **No real money before 4 triggers:** 60 trading days + Sharpe ≥ 0.8 + paper-vs-backtest gap < 20% + 30 clean days. See `project_paper_to_live_triggers.md`.
 - **First live capital is ₹5K, not ₹20K.** 30-day half-cap sizing before scaling.
 
 ---
 
-## Test inventory (263 passing in ~30s)
+## Test inventory (280 passing in ~30s)
 
 | File | Tests | Covers |
 |---|---|---|
 | `test_track_record.py` | 9 | append-only guarantee, PnL math, agent_stats, drawdown |
 | `test_research_log.py` | 7 | write, recent window, batch, finite-value guard |
 | `test_risk_manager.py` | 11 | each rule in isolation, kill switch boundary |
-| `test_approval_and_router.py` | 12 | NullApprovalGate, TelegramApprovalGate, TradeRouter |
+| `test_approval_and_router.py` | 19 | NullApprovalGate, TelegramApprovalGate, TradeRouter, broker plumbing (paper vs live, fill price, rejection) |
+| `test_broker.py` | 10 | NullBroker, BybitBroker (mocked ccxt), order→fill translation, BrokerError path |
 | `test_pdf_report.py` | 2 | reportlab month rendering |
 | `test_research_agents.py` | 8 | research_india + research_crypto |
 | `test_trading_funding.py` | 14 | all 7 refinement rules |

@@ -286,3 +286,134 @@ def test_router_timed_out_does_not_log_trade(tr: TrackRecord) -> None:
     outcome = router.submit(_india_proposal())
     assert outcome.state == "timed_out"
     assert not tr.open_positions()
+
+
+# ----------------------------------------------------------- broker plumbing
+
+
+def _crypto_proposal(**overrides: Any) -> TradeProposal:
+    base = TradeProposal(
+        agent="trading_funding",
+        market="crypto",
+        ticker="BTC/USDT",
+        side="BUY",
+        horizon="swing",
+        intended_qty=0.001,
+        reference_price=60_000.0,
+        portfolio_value=10_000.0,
+        signal_payload={},
+        reason_text="funding rate elevated",
+    )
+    return replace(base, **overrides)
+
+
+class RecordingBroker:
+    """Captures every place_order call so we can assert routing without
+    hitting ccxt. Returns a deterministic fill."""
+
+    def __init__(self, *, fill_price: float = 60_050.0) -> None:
+        self.calls: list[OrderRequest] = []
+        self.fill_price = fill_price
+
+    def place_order(self, order: OrderRequest) -> BrokerFill:
+        self.calls.append(order)
+        return BrokerFill(
+            broker_order_id="bybit-12345",
+            symbol=order.symbol,
+            side=order.side,
+            filled_qty=order.qty,
+            filled_price=self.fill_price,
+            fee=0.06,
+        )
+
+
+def test_router_uses_null_broker_by_default(tr: TrackRecord) -> None:
+    """Paper-mode default — synthetic fill, broker_order_id stamped on payload."""
+    rm = RiskManager(tr, clock=_india_clock_open())
+    router = TradeRouter(
+        risk_manager=rm, approval_gate=NullApprovalGate(),
+        track_record=tr, require_human_approval=False,
+    )
+    outcome = router.submit(_crypto_proposal())
+    assert outcome.state == "executed"
+    assert outcome.trade_id is not None
+    trade = tr.get(outcome.trade_id)
+    assert trade.signal_payload["broker_order_id"].startswith("paper-")
+    assert trade.signal_payload["broker_fill"]["filled_qty"] > 0
+
+
+def test_router_routes_to_injected_broker_for_crypto(tr: TrackRecord) -> None:
+    rm = RiskManager(tr, clock=_india_clock_open())
+    broker = RecordingBroker()
+    router = TradeRouter(
+        risk_manager=rm, approval_gate=NullApprovalGate(),
+        track_record=tr, require_human_approval=False, broker=broker,
+    )
+    outcome = router.submit(_crypto_proposal())
+    assert outcome.state == "executed"
+    assert len(broker.calls) == 1
+    order = broker.calls[0]
+    assert order.symbol == "BTC/USDT"
+    assert order.side == "BUY"
+    assert order.qty > 0
+    assert order.client_order_id and order.client_order_id.startswith("alphagrid-trading_funding-")
+
+
+def test_router_skips_injected_broker_for_india_market(tr: TrackRecord) -> None:
+    """India equities don't have a live broker yet — proposals still log,
+    but the user-injected (e.g. Bybit) broker is bypassed."""
+    rm = RiskManager(tr, clock=_india_clock_open())
+    broker = RecordingBroker()
+    router = TradeRouter(
+        risk_manager=rm, approval_gate=NullApprovalGate(),
+        track_record=tr, require_human_approval=False, broker=broker,
+    )
+    outcome = router.submit(_india_proposal())
+    assert outcome.state == "executed"
+    assert broker.calls == []   # never reached for india market
+
+
+def test_router_returns_rejected_by_broker_on_failure(tr: TrackRecord) -> None:
+    rm = RiskManager(tr, clock=_india_clock_open())
+
+    class BoomBroker:
+        def place_order(self, order: OrderRequest) -> BrokerFill:
+            raise BrokerError("bybit 503 service unavailable")
+
+    router = TradeRouter(
+        risk_manager=rm, approval_gate=NullApprovalGate(),
+        track_record=tr, require_human_approval=False, broker=BoomBroker(),
+    )
+    outcome = router.submit(_crypto_proposal())
+    assert outcome.state == "rejected_by_broker"
+    assert "503" in outcome.reason
+    assert not tr.open_positions()
+
+
+def test_router_uses_broker_fill_price_when_non_paper(tr: TrackRecord) -> None:
+    """When the broker reports a real (non-paper) fill, the trade log
+    records the actual filled price, not the proposal reference price."""
+    rm = RiskManager(tr, clock=_india_clock_open())
+    broker = RecordingBroker(fill_price=60_123.45)
+    router = TradeRouter(
+        risk_manager=rm, approval_gate=NullApprovalGate(),
+        track_record=tr, require_human_approval=False, broker=broker,
+    )
+    outcome = router.submit(_crypto_proposal())
+    assert outcome.trade_id is not None
+    trade = tr.get(outcome.trade_id)
+    assert trade.entry_price == pytest.approx(60_123.45)
+
+
+def test_router_keeps_reference_price_for_null_broker(tr: TrackRecord) -> None:
+    """NullBroker fills are synthetic — log the proposal's reference_price
+    so paper P&L stays grounded in real market data, not 0.0 fills."""
+    rm = RiskManager(tr, clock=_india_clock_open())
+    router = TradeRouter(
+        risk_manager=rm, approval_gate=NullApprovalGate(),
+        track_record=tr, require_human_approval=False, broker=NullBroker(),
+    )
+    outcome = router.submit(_crypto_proposal())
+    assert outcome.trade_id is not None
+    trade = tr.get(outcome.trade_id)
+    assert trade.entry_price == 60_000.0
