@@ -51,7 +51,7 @@ def test_coinmetrics_client_parses_real_response_shape() -> None:
     """Mock urlopen with the actual JSON shape CoinMetrics returns."""
     body = (
         b'{"data": [{"asset": "btc", "time": "2026-05-19T00:00:00.000000000Z", '
-        b'"CapMVRVFF": "1.234"}]}'
+        b'"CapMVRVCur": "1.234"}]}'
     )
 
     class _FakeResponse:

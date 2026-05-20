@@ -103,7 +103,7 @@ class ResearchCrypto(Agent):
                     payload={
                         "asset": mvrv.asset,
                         "source": "coinmetrics_community",
-                        "metric": "CapMVRVFF",
+                        "metric": "CapMVRVCur",
                         "as_of": mvrv.ts.isoformat(),
                     },
                 ))

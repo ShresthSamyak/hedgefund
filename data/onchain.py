@@ -2,7 +2,10 @@
 
 Currently wires CoinMetrics Community API (free, no auth, ~1.6 RPS rate
 limit) for MVRV ratio. Same metric Glassnode sells at $999/mo; community
-plan uses Free-Float MVRV (`CapMVRVFF`) which adjusts for inactive supply.
+plan exposes the **current-supply** MVRV variant (`CapMVRVCur`). The
+free-float variant (`CapMVRVCur`) requires a paid subscription — both are
+valid MVRV; CapMVRVCur is the older / more widely-cited number that
+matches the Glassnode default.
 
 Reference: https://community-api.coinmetrics.io/v4/
 License: data is Creative Commons under their community terms; commercial
@@ -65,7 +68,7 @@ class CoinMetricsClient:
         """
         url = self._build_url("timeseries/asset-metrics", {
             "assets": asset,
-            "metrics": "CapMVRVFF",
+            "metrics": "CapMVRVCur",
             "page_size": "1",
             "frequency": "1d",
             "pretty": "false",
@@ -88,7 +91,7 @@ class CoinMetricsClient:
         row = rows[-1]
         try:
             ts = _parse_iso(str(row["time"]))
-            value = float(row["CapMVRVFF"])
+            value = float(row["CapMVRVCur"])
         except (KeyError, TypeError, ValueError):
             log.warning("coinmetrics malformed row: %s", row)
             return None
