@@ -82,10 +82,38 @@ class ResearchCrypto(Agent):
             payload={"regime": regime, "universe_rates": rates},
         ))
 
+        # MVRV is a daily metric — fetch once per tick. Returns None on
+        # any failure (rate limit, network, parse) so the rest of the
+        # signal write still happens.
+        mvrv_value: float | None = None
+        if self.onchain is not None:
+            try:
+                mvrv = self.onchain.fetch_mvrv("btc")
+            except Exception:
+                log.exception("research_crypto onchain fetch failed")
+                mvrv = None
+            if mvrv is not None:
+                mvrv_value = mvrv.value
+                signals.append(WriteSignal(
+                    agent=self.name,
+                    market="crypto",
+                    ticker="PORTFOLIO",
+                    signal_type="mvrv",
+                    value=mvrv.value,
+                    payload={
+                        "asset": mvrv.asset,
+                        "source": "coinmetrics_community",
+                        "metric": "CapMVRVFF",
+                        "as_of": mvrv.ts.isoformat(),
+                    },
+                ))
+
         ids = self.research_log.write_batch(signals)
         log.info(
-            "research_crypto wrote %d signals, regime=%s, rates=%s",
-            len(ids), regime, [round(r, 5) for r in rates],
+            "research_crypto wrote %d signals, regime=%s, mvrv=%s, rates=%s",
+            len(ids), regime,
+            f"{mvrv_value:.3f}" if mvrv_value is not None else "n/a",
+            [round(r, 5) for r in rates],
         )
 
 
