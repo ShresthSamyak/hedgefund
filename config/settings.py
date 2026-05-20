@@ -36,11 +36,27 @@ class AngelOne(BaseSettings):
 
 
 class Binance(BaseSettings):
+    """Public market-data only (REST OHLC/funding + WebSocket ticks). No auth
+    needed for reads, so India IP restrictions don't apply. Order-placement
+    moved to Bybit — Binance trading endpoints are blocked for Indian users.
+    """
     api_key: str = ""
     api_secret: str = ""
     testnet: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="BINANCE_", extra="ignore")
+
+
+class Bybit(BaseSettings):
+    """Live order-placement venue. Bybit gives Indian users full API trading
+    access (KYC required); Binance does not. Used by execution.broker.BybitBroker
+    when settings.runtime.paper_mode is False.
+    """
+    api_key: str = ""
+    api_secret: str = ""
+    testnet: bool = True
+
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="BYBIT_", extra="ignore")
 
 
 class DataProviders(BaseSettings):
@@ -239,6 +255,7 @@ class Settings:
         self.runtime = Runtime()
         self.angel = AngelOne()
         self.binance = Binance()
+        self.bybit = Bybit()
         self.data = DataProviders()
         self.llm = LLM()
         self.vertex = VertexAI()

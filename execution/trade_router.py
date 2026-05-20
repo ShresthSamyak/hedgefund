@@ -6,12 +6,15 @@ Flow:
             ├─> RiskManager.review(proposal)        # rules + sizing
             ├─> ApprovalGate.request(...)           # optional human gate
             ├─> LLM rationale  (optional, reasoning tier)
+            ├─> Broker.place_order(...)             # live only; NullBroker in paper
             └─> TrackRecord.open_trade(...)         # append-only log
 
-We do NOT place orders here yet. Broker wiring lands in week 5 when the
-funding-arb agent ships. Until then, this is paper-mode: a successful
-submission produces an open row in the trade log and returns an OUTCOME the
-caller can act on.
+Live order placement runs through `execution.broker.Broker`. In paper mode
+we use `NullBroker` so the same downstream code path runs end-to-end —
+trades land in TrackRecord with synthetic fills. When paper_mode flips to
+False, the wired `BybitBroker` (Indian-user-friendly venue; Binance trading
+endpoints are blocked for India IPs) places real orders, and the actual
+filled qty/price are what get logged.
 
 When an `LLMClient` is provided AND the `enable_llm_summaries` toggle is
 on, every APPROVED trade gets a one-sentence rationale attached to its
@@ -28,6 +31,7 @@ from typing import Any, Callable, Literal
 
 from comms.approval_gate import ApprovalGate
 from config.settings import get_settings
+from execution.broker import Broker, BrokerError, BrokerFill, NullBroker, OrderRequest
 from models.llm_client import LLMClient, NullLLM
 from record.track_record import OpenTradeRequest, TrackRecord
 from risk.risk_manager import Decision, RiskManager, TradeProposal
@@ -38,6 +42,7 @@ OutcomeState = Literal[
     "executed",
     "rejected_by_risk",
     "rejected_by_human",
+    "rejected_by_broker",
     "timed_out",
 ]
 
@@ -64,6 +69,7 @@ class TradeRouter:
         approval_timeout: timedelta | None = None,
         llm: LLMClient | None = None,
         now_fn: Callable[[], datetime] | None = None,
+        broker: Broker | None = None,
     ) -> None:
         self.risk = risk_manager
         self.gate = approval_gate
@@ -81,6 +87,9 @@ class TradeRouter:
         # Lets the BacktestRunner inject its virtual clock so dry-run trades
         # carry sim-time entry_ts instead of wall-clock.
         self._now: Callable[[], datetime] = now_fn or (lambda: datetime.now(timezone.utc))
+        # NullBroker is safe to use in paper mode; live mode requires a real
+        # broker (BybitBroker) explicitly injected by main.AppContext.
+        self.broker: Broker = broker or NullBroker()
 
     def submit(self, proposal: TradeProposal) -> TradeOutcome:
         decision = self.risk.review(proposal)
