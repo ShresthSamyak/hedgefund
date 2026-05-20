@@ -9,7 +9,6 @@ from data.feeds_crypto import StaticCryptoFeed
 from data.onchain import CoinMetricsClient, MvrvPoint, StaticOnChainFeed, _parse_iso
 from record.research_log import ResearchLog
 
-
 # ---------------------------------------------------------------- StaticOnChainFeed
 
 
