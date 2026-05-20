@@ -133,14 +133,32 @@ class TradeRouter:
             if rationale:
                 signal_payload["llm_reason"] = rationale
 
+        # Broker — only routes through a real venue (Bybit) when live; in
+        # paper mode NullBroker returns a synthetic fill so the same code
+        # path runs and downstream consumers see broker_order_id either way.
+        fill = self._place_order(proposal, decision)
+        if isinstance(fill, TradeOutcome):
+            return fill
+        signal_payload["broker_order_id"] = fill.broker_order_id
+        signal_payload["broker_fill"] = {
+            "filled_qty": fill.filled_qty,
+            "filled_price": fill.filled_price,
+            "fee": fill.fee,
+        }
+        # If the broker reported a real fill (non-paper), prefer its numbers;
+        # otherwise stick with the risk-sized qty + reference price.
+        is_paper_fill = bool(fill.raw and fill.raw.get("paper"))
+        logged_qty = decision.sized_qty if is_paper_fill else (fill.filled_qty or decision.sized_qty)
+        logged_price = proposal.reference_price if is_paper_fill else (fill.filled_price or proposal.reference_price)
+
         trade_id = self.track_record.open_trade(
             OpenTradeRequest(
                 agent=proposal.agent,
                 market=proposal.market,
                 ticker=proposal.ticker,
                 side=proposal.side,
-                qty=decision.sized_qty,
-                entry_price=proposal.reference_price,
+                qty=logged_qty,
+                entry_price=logged_price,
                 portfolio_value_at_entry=proposal.portfolio_value,
                 reason_text=proposal.reason_text,
                 signal_payload=signal_payload,
@@ -149,8 +167,8 @@ class TradeRouter:
             )
         )
         log.info(
-            "trade executed agent=%s ticker=%s qty=%g trade_id=%s paper=%s",
-            proposal.agent, proposal.ticker, decision.sized_qty, trade_id, self.paper,
+            "trade executed agent=%s ticker=%s qty=%g trade_id=%s paper=%s broker_order_id=%s",
+            proposal.agent, proposal.ticker, logged_qty, trade_id, self.paper, fill.broker_order_id,
         )
         return TradeOutcome(
             state="executed",
@@ -159,6 +177,46 @@ class TradeRouter:
             trade_id=trade_id,
             rule_trail=decision.rule_trail,
         )
+
+    # ------------------------------------------------------------------ broker
+
+    def _place_order(
+        self, proposal: TradeProposal, decision: Decision
+    ) -> BrokerFill | TradeOutcome:
+        """Route the approved proposal to the broker. Crypto only for now;
+        India equities will plug in Angel One later. Returns either a fill
+        or a `rejected_by_broker` outcome if the broker raises."""
+        if proposal.market != "crypto":
+            # No live broker wired for India yet — keep paper behaviour.
+            return NullBroker().place_order(OrderRequest(
+                symbol=proposal.ticker,
+                side="BUY" if proposal.side in ("BUY", "LONG") else "SELL",
+                qty=decision.sized_qty,
+                order_type="MARKET",
+                limit_price=proposal.reference_price,
+                client_order_id=f"alphagrid-{proposal.agent}",
+            ))
+        order = OrderRequest(
+            symbol=proposal.ticker,
+            side="BUY" if proposal.side in ("BUY", "LONG") else "SELL",
+            qty=decision.sized_qty,
+            order_type="MARKET",
+            limit_price=proposal.reference_price,
+            client_order_id=f"alphagrid-{proposal.agent}-{int(self._now().timestamp())}",
+        )
+        try:
+            return self.broker.place_order(order)
+        except BrokerError as exc:
+            log.warning(
+                "rejected_by_broker agent=%s ticker=%s: %s",
+                proposal.agent, proposal.ticker, exc,
+            )
+            return TradeOutcome(
+                state="rejected_by_broker",
+                reason=str(exc),
+                decision=decision,
+                rule_trail=decision.rule_trail,
+            )
 
     # ------------------------------------------------------------------ llm
 

@@ -36,6 +36,7 @@ from data.feeds_crypto import BinanceFeed
 from data.feeds_india import GoogleNewsAndYFinanceFeed, IndiaFeed
 from data.live_crypto_stream import BinanceWebSocketStream
 from data.onchain import CoinMetricsClient
+from execution.broker import Broker, BybitBroker, NullBroker
 from execution.trade_router import TradeRouter
 from infra.signal_bus import InMemoryBus, SignalBus
 from models.finbert_scorer import FinBertScorer, NullScorer, Scorer
@@ -62,11 +63,17 @@ class AppContext:
         # One LLM client shared by every consumer (router, research_india,
         # telegram_digest) so cost tracking aggregates in one place.
         self.llm: LLMClient = build_llm_client()
+        # Broker — NullBroker in paper mode; BybitBroker only when both
+        # paper_mode=False and BYBIT_API_KEY/SECRET are set (Binance trading
+        # endpoints are region-blocked for Indian users, so live orders go
+        # to Bybit instead).
+        self.broker: Broker = _build_broker(self.settings)
         self.trade_router = TradeRouter(
             risk_manager=self.risk_manager,
             approval_gate=self.approval_gate,
             track_record=self.track_record,
             llm=self.llm,
+            broker=self.broker,
         )
         # Feeds — created lazily based on toggles.
         self._crypto_feed: BinanceFeed | None = None
