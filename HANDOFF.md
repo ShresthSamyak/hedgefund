@@ -2,9 +2,14 @@
 
 > Read this first if you're picking the project up cold. It captures what's
 > built, what's not, what the locked decisions are, and where to look next.
-> Last updated: 2026-05-20 (Bybit execution broker wired — Binance trading
-> endpoints are region-blocked for India IPs, so live orders route to Bybit
-> while public market data continues to come from Binance).
+> Last updated: 2026-05-21 (deployed to Azure + Vercel; paper burn-in running
+> 24x7).
+>
+> **Live URLs:**
+> - Backend  (TLS):   `https://20-212-205-151.sslip.io`  → Azure VM, Singapore
+> - Frontend (TLS):   `https://alphagrid-dashboard.vercel.app`  → Vercel
+> - VM specs:         Standard_B2s_v2 (2 vCPU / 8 GiB RAM / 30 GiB SSD), `azureuser@20.212.205.151`, key at `C:\Users\HP\.ssh\alphagrid-key`
+> - Auto-deploy:      git push origin main → python-ci → SSH-deploy to VM; Vercel rebuilds on same push
 
 ## TL;DR
 
